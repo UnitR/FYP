@@ -9,6 +9,142 @@
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
     <Grid>
-
+        <Grid.RowDefinitions>
+            <RowDefinition Height="0*"/>
+            <RowDefinition/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <SplitView x:Name="splitStepGuide" DisplayMode="Inline" IsPaneOpen="True" OpenPaneLength="200"
+                   PaneBackground="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}" Grid.RowSpan="2">
+            <SplitView.Background>
+                <AcrylicBrush TintOpacity="0.2" BackgroundSource="HostBackdrop" TintLuminosityOpacity="0.5"/>
+            </SplitView.Background>
+            <SplitView.Pane>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="1.5*" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Button Grid.Row="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                        <Button.Background>
+                            <AcrylicBrush TintColor="#CCD1D1D1"/>
+                        </Button.Background>
+                        <Button.Resources>
+                            <RevealBackgroundBrush x:Key="HighlightRevealBorderBrush" Color="Yellow" />
+                        </Button.Resources>
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ButtonRevealStyle}">
+                                <Setter Property="FocusVisualSecondaryBrush" Value="Yellow" />
+                            </Style>
+                        </Button.Style>
+                        <StackPanel>
+                            <Image Height="150" Width="150" Grid.Column="1" Source="/Assets/Square150x150Logo.scale-200.png" Stretch="Fill" />
+                            <TextBlock Grid.Row="1" Text="1. Choose Mode" FontSize="24" />
+                        </StackPanel>
+                    </Button>
+                    <Border Grid.Row="1" >
+                        <Button Content="Button" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                    </Border>
+                    <Border Grid.Row="2" >
+                        <Button Content="Button" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                    </Border>
+                </Grid>
+            </SplitView.Pane>
+            <SplitView.Content>
+                <Hub x:Name="HubMain">
+                    <Hub.Resources>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Margin" Value="0,52,0,0" />
+                            <Setter Property="FontSize" Value="48" />
+                        </Style>
+                        <Style TargetType="HubSection">
+                            <Setter Property="Margin" Value="0,0,52,0" />
+                        </Style>
+                    </Hub.Resources>
+                    <HubSection>
+                        <HubSection.Header>
+                            <TextBlock FontSize="48">
+                                1. Select what you would like to do
+                            </TextBlock>
+                        </HubSection.Header>
+                        <DataTemplate>
+                            <StackPanel Padding="0,100,0,0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Button x:Name="BtnSecureFile" Width="600" Margin="0,0,0,100" Background="#FD1CD100" Click="BtnSecureFile_Click" HorizontalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Padding="0,16,0,16" Margin="-290,0,-290,0">
+                                        <Image Height="100" Width="100" HorizontalAlignment="Left" Margin="0,0,50,0" Source="/Assets/Square150x150Logo.scale-200.png" />
+                                        <TextBlock Text="Secure a file" HorizontalAlignment="Left" FontSize="48" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="BtnViewFile" Width="600" Background="#FFECE221" HorizontalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Padding="0,16,0,16" Margin="-290,0,-290,0">
+                                        <Image Height="100" Width="100" Margin="0,0,50,0" Source="/Assets/Square150x150Logo.scale-200.png" />
+                                        <TextBlock Text="View a secure file" HorizontalAlignment="Left" VerticalAlignment="Center" FontSize="48" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </DataTemplate>
+                    </HubSection>
+                    <HubSection>
+                        <HubSection.Header>
+                            <TextBlock FontSize="48" Margin="0,52,0,0">
+                                2. Choose file
+                            </TextBlock>
+                        </HubSection.Header>
+                        <DataTemplate>
+                            <StackPanel Padding="0,100,0,0">
+                                <Button x:Name="BtnFilePick" Width="600" MinHeight="80" Click="BtnFilePick_Click">
+                                    <TextBlock FontSize="32px">
+                                        Open file picker...
+                                    </TextBlock>
+                                </Button>
+                            </StackPanel>
+                        </DataTemplate>
+                    </HubSection>
+                    <HubSection>
+                        <HubSection.Header>
+                            <TextBlock>
+                                3. Complete
+                            </TextBlock>
+                        </HubSection.Header>
+                        <DataTemplate>
+                            <StackPanel>
+                                
+                                <Border Height="Auto" MinWidth="400" BorderThickness="1,1,1,1">
+                                    <StackPanel>
+                                        <StackPanel.Resources>
+                                            <Style TargetType="StackPanel">
+                                                <Setter Property="Padding" Value="0,0,0,0" />
+                                            </Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="FontSize" Value="36" />
+                                            </Style>
+                                        </StackPanel.Resources>
+                                        <TextBlock Margin="0,30,0,0">
+                                            File Path:
+                                        </TextBlock>
+                                        <TextBlock x:Name="LblFilePath" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"></TextBlock>
+                                        <TextBlock Margin="0,30,0,0">
+                                            File Name:
+                                        </TextBlock>
+                                        <TextBlock x:Name="LblFileName"></TextBlock>
+                                    </StackPanel>
+                                </Border>
+                                <Button MinHeight="80" Width="240" HorizontalAlignment="Center" Background="#FF3AFF00">
+                                    <TextBlock FontSize="48" VerticalAlignment="Center">
+                                        GO!
+                                    </TextBlock>
+                                </Button>
+                            </StackPanel>
+                        </DataTemplate>
+                    </HubSection>
+                </Hub>
+            </SplitView.Content>
+        </SplitView>
     </Grid>
 </Page>
