@@ -114,8 +114,8 @@
                         </HubSection.Header>
                         <DataTemplate>
                             <StackPanel>
-                                
-                                <Border Height="Auto" MinWidth="400" BorderThickness="1,1,1,1">
+
+                                <Border Height="Auto" MinWidth="400" BorderThickness="1,1,1,1" Background="White">
                                     <StackPanel>
                                         <StackPanel.Resources>
                                             <Style TargetType="StackPanel">
