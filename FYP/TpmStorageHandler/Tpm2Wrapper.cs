@@ -108,14 +108,14 @@ namespace TpmStorageHandler
             // Key parameters
             TpmPublic keyTemplate = new TpmPublic(
                 TpmAlgId.Sha256,
-                ObjectAttr.Encrypt | ObjectAttr.Decrypt                                     // Allow both seal/unseal,
-                | ObjectAttr.FixedParent | ObjectAttr.FixedTPM                              // fixed parent,
-                | ObjectAttr.UserWithAuth                                                   // cannot be duplicated,
-                                                                                            // authenticate users with HMAC or PWAP
+                ObjectAttr.Decrypt                                                          // Storage keys are decryption keys,
+                | ObjectAttr.Restricted                                                     // Must be restricted - per definition
+                | ObjectAttr.FixedParent | ObjectAttr.FixedTPM                              // fixed parent, cannot be duplicated
+                | ObjectAttr.UserWithAuth                                                   // authenticate users with HMAC or PWAP
                 | ObjectAttr.SensitiveDataOrigin,                                           // origin of sensitive data; not provided externally
                 new byte[0],
                 new RsaParms(
-                    new SymDefObject(TpmAlgId.Aes, 256, TpmAlgId.Cfb),
+                    new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb),
                     new NullAsymScheme(),
                     2048,
                     0),
