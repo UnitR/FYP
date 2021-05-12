@@ -1,18 +1,46 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using Tpm2Lib;
 
 namespace TpmStorageHandler
 {
     public sealed class Tpm2Wrapper : IDisposable
     {
+        public struct KeyWrapper
+        {
+            public readonly TpmHandle handle;
+            public readonly TpmPublic keyPub;
+            public readonly TpmPrivate keyPriv;
+
+            public KeyWrapper(TpmHandle handle, TpmPublic keyPublic, TpmPrivate keyPrivate = null)
+            {
+                this.handle = handle;
+                this.keyPub = keyPublic;
+                this.keyPriv = keyPrivate;
+            }
+        }
+
+        public struct KeyDuplicate
+        {
+            public byte[] encKeyOut;
+            public TpmPrivate duplicate;
+            public byte[] seed;
+
+            public KeyDuplicate(byte[] encKeyOut, TpmPrivate duplciate, byte[] seed)
+            {
+                this.encKeyOut = encKeyOut;
+                this.duplicate = duplciate;
+                this.seed = seed;
+            }
+        }
 
         #region --------------- Constants --------------- 
         private const string DEFAULT_TPM_SERVER = "127.0.0.1";
         private const int DEFAULT_TPM_PORT = 2321;
+        private const int CFB_IV_SIZE = 16;
+
+        private byte[] SENS_PRIM_KEY_AUTH_VAL = { 0xa, 0xb, 0xc };
+        private byte[] SENS_KEY_AUTH_VAL = { 0x1, 0x2, 0x3 };
         #endregion
 
         #region --------------- Fields --------------- 
@@ -62,6 +90,7 @@ namespace TpmStorageHandler
                 if (disposing)
                 {
                     // Never leave lingering connections to the TPM
+                    _tbsTpm.Shutdown(Su.Clear);
                     _tbs?.Dispose();
                     _tbsTpm?.Dispose();
                 }
@@ -85,6 +114,28 @@ namespace TpmStorageHandler
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
+
+        /// <summary>
+        /// Flush the given context. Wrapper around the inner tpm object function.
+        /// </summary>
+        /// <param name="handle"></param>
+        public void FlushContext(TpmHandle handle)
+            => _tbsTpm.FlushContext(handle);
+
+        private static SymDefObject GetmAesSymObj()
+            => new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb);
+
+        private static TpmPublic GetChildKeyPublic()
+            => new TpmPublic(
+                TpmAlgId.Sha256,
+                ObjectAttr.Decrypt | ObjectAttr.Encrypt
+                | ObjectAttr.UserWithAuth
+                | ObjectAttr.SensitiveDataOrigin,
+                null,
+                new SymcipherParms(
+                    GetmAesSymObj()
+                ),
+                new Tpm2bDigestSymcipher());
 
         public AuthSession StartHmacAuthSession(AuthValue userAuth = null)
         {
@@ -121,21 +172,174 @@ namespace TpmStorageHandler
                     0),
                 new Tpm2bPublicKeyRsa());
 
-            CreationData creationData;
-            TkCreation creationTicket;
-            byte[] creationHash;
-            byte[] keyAuth = _tbsTpm.GetRandom(24);
-
             TpmHandle primHandle = _tbsTpm[_authVal].CreatePrimary(
                 TpmHandle.RhOwner,
-                new SensitiveCreate(keyAuth, new byte[0]),
+                new SensitiveCreate(SENS_PRIM_KEY_AUTH_VAL, new byte[0]),
                 keyTemplate,
                 new byte[0],
                 new PcrSelection[0],
                 out newKeyPublic,
-                out creationData, out creationHash, out creationTicket);
+                out _, out _, out _);
 
             return primHandle;
         }
+
+        public KeyWrapper CreateNewPrimaryKeyWithParent(TpmHandle parent)
+        {
+            TpmPublic keyTemplate = new TpmPublic(
+                TpmAlgId.Sha256,
+                ObjectAttr.Encrypt | ObjectAttr.Decrypt
+                                   | ObjectAttr.FixedParent | ObjectAttr.FixedTPM
+                                   | ObjectAttr.UserWithAuth
+                                   | ObjectAttr.SensitiveDataOrigin,
+                new byte[0],
+                new SymcipherParms(
+                    GetmAesSymObj()),
+                new Tpm2bDigestSymcipher());
+
+            TpmHandle keyHandle = _tbsTpm[_authVal].CreatePrimary(
+                parent,
+                new SensitiveCreate(SENS_PRIM_KEY_AUTH_VAL, new byte[0]),
+                keyTemplate,
+                new byte[0],
+                new PcrSelection[0],
+                out TpmPublic newKeyPublic,
+                out _, out _, out _);
+
+            return new KeyWrapper(keyHandle, newKeyPublic);
+        }
+
+        public KeyWrapper CreateChildKey(TpmHandle primHandle)
+        {
+            TpmPublic childKeyTemplate = GetChildKeyPublic();
+
+            TpmPrivate childKeyPrivate = _tbsTpm.Create(
+                primHandle,
+                new SensitiveCreate(SENS_KEY_AUTH_VAL, null),
+                childKeyTemplate,
+                null,
+                new PcrSelection[0],
+                out childKeyTemplate,
+                out CreationData ckCreationData,
+                out byte[] ckCreationHash,
+                out TkCreation ckCreationTicket);
+
+            return LoadChildKey(primHandle, childKeyPrivate, childKeyTemplate);
+        }
+
+        /// <summary>
+        /// Duplicates a given child key belonging to the parent provided.
+        /// </summary>
+        /// <param name="childKey"></param>
+        /// <param name="parentHandle"></param>
+        /// <returns>
+        /// Duplicated key struct containing the encryption key generated, the seed used and the private area of the key.
+        /// </returns>
+        public KeyDuplicate DuplicateChildKey(KeyWrapper childKey, TpmHandle parentHandle)
+        {
+            AuthSession dupeSesh = _tbsTpm.StartAuthSessionEx(TpmSe.Policy, TpmAlgId.Sha256);
+
+            //AuthSession dupeSesh = _tbsTpm.StartAuthSession(
+            //    TpmRh.Null, TpmHandle.RhOwner, Globs.GetRandomBytes(16),
+            //    new byte[0], TpmSe.Policy, new SymDef(), TpmAlgId.Sha256, out byte[] _);
+
+            AuthValue authVal = AuthValue.FromRandom(8);
+            TpmHandle hashStart = _tbsTpm.HashSequenceStart(authVal, TpmAlgId.Sha256);
+            _tbsTpm[authVal].SequenceUpdate(hashStart, childKey.handle.Name);
+            byte[] policyNameHash = _tbsTpm[authVal]
+                .SequenceComplete(hashStart, parentHandle.Name, TpmHandle.RhOwner, out TkHashcheck _);
+
+            //_tbsTpm.PolicyNameHash(dupeSesh, policyNameHash);
+            //_tbsTpm.PolicyCommandCode(dupeSesh, TpmCc.Duplicate);
+            //_tbsTpm.PolicyDuplicationSelect(dupeSesh, childKey.handle.Name, parentHandle.Name, 1);
+
+            PolicyTree policy = new PolicyTree(TpmAlgId.Sha256);
+            policy.Create(new PolicyAce[]
+            {
+                //new TpmPolicySecret(sealedObjHandle, true, 0, new byte[0], new byte[0]),
+                new TpmPolicyNameHash(policyNameHash),
+                new TpmPolicyCommand(TpmCc.Duplicate),
+                //new TpmPolicyDuplicationSelect(childKey.handle.Name, parentHandle.Name, true),
+                "duplicate"
+            });
+            dupeSesh.RunPolicy(_tbsTpm, policy, "duplicate");
+
+            byte[] encKeyOut = null;
+            TpmPrivate duplicate = null;
+            byte[] seed = null;
+            try
+            {
+                // For the next command we would need the session to be set to the duplication session
+                encKeyOut =
+                    _tbsTpm
+                        ._SetSessions(dupeSesh)
+                        .Duplicate(childKey.handle, parentHandle, null, GetmAesSymObj(), out duplicate, out seed);
+            }
+            finally
+            {
+                _tbsTpm.FlushContext(dupeSesh);
+            }
+
+            return new KeyDuplicate(encKeyOut, duplicate, seed);
+        }
+
+        //public TpmHandle ImportKey(TpmHandle parentHandle, KeyDuplicate dupe)
+        //{
+        //    TpmPublic keyPub = GetChildKeyPublic();
+        //    TpmPrivate keyPriv = _tbsTpm.Import(parentHandle, dupe.encKeyOut, keyPub, dupe.duplicate, dupe.seed, GetmAesSymObj());
+        //    return LoadChildKey(parentHandle, keyPriv, keyPub);
+        //}
+
+        public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, KeyWrapper parentKey)
+            => LoadChildKeyExternal(childKeyPrivateBytes, parentKey.handle);
+
+        public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, TpmHandle parentHandle)
+        {
+            TpmPublic childKeyPublic = GetChildKeyPublic();
+            TpmHandle childKeyHandle = _tbsTpm.LoadExternal(
+                new Sensitive(_authVal, new byte[0], new Tpm2bSymKey(childKeyPrivateBytes)),
+                childKeyPublic,
+                parentHandle
+            );
+            
+            return new KeyWrapper(
+                childKeyHandle,
+                childKeyPublic,
+                new TpmPrivate(childKeyPrivateBytes)
+            );
+        }
+
+        public KeyWrapper LoadChildKey(TpmHandle parentHandle, TpmPrivate childPrivate, TpmPublic childPublic)
+        {
+            if (childPublic == null)
+            {
+                childPublic = GetChildKeyPublic();
+            }
+            TpmHandle childkeyHandle = _tbsTpm[Auth.Default].Load(parentHandle, childPrivate, childPublic);
+            return new KeyWrapper(childkeyHandle, childPublic, childPrivate);
+        }
+
+        public byte[] Encrypt(string message, KeyWrapper key, out byte[] iv)
+            => Encrypt(Encoding.UTF8.GetBytes(message), key, out iv);
+
+        public byte[] Encrypt(byte[] message, KeyWrapper key, out byte[] iv)
+        {
+            iv = _tbsTpm.GetRandom(CFB_IV_SIZE);
+            return _tbsTpm.EncryptDecrypt(key.handle, 1, TpmAlgId.Null, iv, message, out byte[] _);
+        }
+
+        public byte[] Decrypt(byte[] encMessage, KeyWrapper key, byte[] iv)
+            => _tbsTpm.EncryptDecrypt(key.handle, 1, TpmAlgId.Null, iv, encMessage, out byte[] _);
+
+        public byte[] RsaEncrypt(KeyWrapper key, byte[] message)
+            => _tbsTpm.RsaEncrypt(key.handle, message, new SchemeOaep(TpmAlgId.Sha1), null);
+
+        public byte[] RsaDecrypt(KeyWrapper key, byte[] encMessage)
+            => _tbsTpm.RsaDecrypt(key.handle, encMessage, new SchemeOaep(TpmAlgId.Sha1), null);
+
+        //public void Seal()
+        //{
+        //    _tbsTpm
+        //}
     }
 }
