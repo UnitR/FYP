@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Text;
+using Windows.Services.Maps;
 using Tpm2Lib;
 using TpmStorageHandler.Structures;
 
@@ -28,6 +29,8 @@ namespace TpmStorageHandler
 
         private readonly Tbs _tbs;
 
+        private readonly TpmCc _supportedEncDecCc;
+
         /// <summary>
         /// Auth value used for knowledge proofs.
         /// </summary>
@@ -55,6 +58,10 @@ namespace TpmStorageHandler
 
             // Auth-value to control later access to hash objects
             _authVal = new AuthValue();
+
+            _supportedEncDecCc = 
+                _tbsTpm.Helpers.IsImplemented(TpmCc.EncryptDecrypt2) ? 
+                    TpmCc.EncryptDecrypt2 : TpmCc.EncryptDecrypt;
         }
 
         private void Dispose(bool disposing)
@@ -99,13 +106,14 @@ namespace TpmStorageHandler
         private static SymDefObject GetmAesSymObj()
             => new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb);
 
-        private static TpmPublic GetChildKeyPublic()
+        private static TpmPublic GetChildKeyPublic(byte[] authSession = null)
             => new TpmPublic(
                 TpmAlgId.Sha256,
                 ObjectAttr.Decrypt | ObjectAttr.Encrypt
                 | ObjectAttr.UserWithAuth
-                | ObjectAttr.SensitiveDataOrigin,
-                null,
+                | ObjectAttr.SensitiveDataOrigin
+                | ObjectAttr.AdminWithPolicy,       // allow duplication
+                authSession,                        // expected policy hash
                 new SymcipherParms(
                     GetmAesSymObj()
                 ),
@@ -122,13 +130,13 @@ namespace TpmStorageHandler
         }
 
         /// <summary>
-        /// Creates a storage key: 2048 bit RSA paired with a 256-bit AES/CFB key.
+        /// Creates a storage key: 2048 bit RSA paired with a 128-bit AES/CFB key.
         /// </summary>
         /// <param name="newKeyPublic">
         /// The storage key. Non-duplicatable.
         /// </param>
         /// <returns></returns>
-        public TpmHandle CreateRsaPrimaryStorageKey(out TpmPublic newKeyPublic)
+        public TpmHandle CreatePrimaryStorageKey(out TpmPublic newKeyPublic)
         {
             // Key parameters
             TpmPublic keyTemplate = new TpmPublic(
@@ -157,35 +165,10 @@ namespace TpmStorageHandler
 
             return primHandle;
         }
-
-        public KeyWrapper CreateNewPrimaryKeyWithParent(TpmHandle parent)
+        
+        public KeyWrapper CreateChildKey(TpmHandle primHandle, byte[] authSession = null)
         {
-            TpmPublic keyTemplate = new TpmPublic(
-                TpmAlgId.Sha256,
-                ObjectAttr.Encrypt | ObjectAttr.Decrypt
-                                   | ObjectAttr.FixedParent | ObjectAttr.FixedTPM
-                                   | ObjectAttr.UserWithAuth
-                                   | ObjectAttr.SensitiveDataOrigin,
-                new byte[0],
-                new SymcipherParms(
-                    GetmAesSymObj()),
-                new Tpm2bDigestSymcipher());
-
-            TpmHandle keyHandle = _tbsTpm[_authVal].CreatePrimary(
-                parent,
-                new SensitiveCreate(SENS_PRIM_KEY_AUTH_VAL, new byte[0]),
-                keyTemplate,
-                new byte[0],
-                new PcrSelection[0],
-                out TpmPublic newKeyPublic,
-                out _, out _, out _);
-
-            return new KeyWrapper(keyHandle, newKeyPublic);
-        }
-
-        public KeyWrapper CreateChildKey(TpmHandle primHandle)
-        {
-            TpmPublic childKeyTemplate = GetChildKeyPublic();
+            TpmPublic childKeyTemplate = GetChildKeyPublic(authSession);
 
             TpmPrivate childKeyPrivate = _tbsTpm.Create(
                 primHandle,
@@ -205,64 +188,33 @@ namespace TpmStorageHandler
         /// Duplicates a given child key belonging to the parent provided.
         /// </summary>
         /// <param name="childKey"></param>
-        /// <param name="parentHandle"></param>
+        /// <param name="newParent"></param>
+        /// <param name="policySession"></param>
         /// <returns>
-        /// Duplicated key struct containing the encryption key generated, the seed used and the private area of the key.
+        /// Duplicated key struct containing the encryption key generated, the Seed used and the private area of the key.
         /// </returns>
-        public KeyDuplicate DuplicateChildKey(KeyWrapper childKey, TpmHandle parentHandle)
+        public KeyDuplicate DuplicateChildKey(KeyWrapper childKey, KeyWrapper newParent, PolicySession policySession)
         {
-            AuthSession dupeSesh = _tbsTpm.StartAuthSessionEx(TpmSe.Policy, TpmAlgId.Sha256);
+            byte[] encKeyOut =
+                _tbsTpm[policySession.AuthSession]
+                    .Duplicate(childKey.Handle, newParent.Handle, null, GetmAesSymObj(), 
+                        out var duplicate, out var seed);
 
-            //AuthSession dupeSesh = _tbsTpm.StartAuthSession(
-            //    TpmRh.Null, TpmHandle.RhOwner, Globs.GetRandomBytes(16),
-            //    new byte[0], TpmSe.Policy, new SymDef(), TpmAlgId.Sha256, out byte[] _);
-
-            AuthValue authVal = AuthValue.FromRandom(8);
-            TpmHandle hashStart = _tbsTpm.HashSequenceStart(authVal, TpmAlgId.Sha256);
-            _tbsTpm[authVal].SequenceUpdate(hashStart, childKey.handle.Name);
-            byte[] policyNameHash = _tbsTpm[authVal]
-                .SequenceComplete(hashStart, parentHandle.Name, TpmHandle.RhOwner, out TkHashcheck _);
-
-            //_tbsTpm.PolicyNameHash(dupeSesh, policyNameHash);
-            //_tbsTpm.PolicyCommandCode(dupeSesh, TpmCc.Duplicate);
-            //_tbsTpm.PolicyDuplicationSelect(dupeSesh, childKey.handle.Name, parentHandle.Name, 1);
-
-            PolicyTree policy = new PolicyTree(TpmAlgId.Sha256);
-            policy.Create(new PolicyAce[]
-            {
-                //new TpmPolicySecret(sealedObjHandle, true, 0, new byte[0], new byte[0]),
-                new TpmPolicyNameHash(policyNameHash),
-                new TpmPolicyCommand(TpmCc.Duplicate),
-                //new TpmPolicyDuplicationSelect(childKey.handle.Name, parentHandle.Name, true),
-                "duplicate"
-            });
-            dupeSesh.RunPolicy(_tbsTpm, policy, "duplicate");
-
-            byte[] encKeyOut = null;
-            TpmPrivate duplicate = null;
-            byte[] seed = null;
-            try
-            {
-                // For the next command we would need the session to be set to the duplication session
-                encKeyOut =
-                    _tbsTpm
-                        ._SetSessions(dupeSesh)
-                        .Duplicate(childKey.handle, parentHandle, null, GetmAesSymObj(), out duplicate, out seed);
-            }
-            finally
-            {
-                _tbsTpm.FlushContext(dupeSesh);
-            }
-
-            return new KeyDuplicate(encKeyOut, duplicate, seed);
+            return new KeyDuplicate(encKeyOut, seed, duplicate, childKey.KeyPub);
         }
 
-        //public TpmHandle ImportKey(TpmHandle parentHandle, KeyDuplicate dupe)
-        //{
-        //    TpmPublic KeyPub = GetChildKeyPublic();
-        //    TpmPrivate KeyPriv = _tbsTpm.Import(parentHandle, dupe.EncKeyOut, KeyPub, dupe.Duplicate, dupe.Seed, GetmAesSymObj());
-        //    return LoadChildKey(parentHandle, KeyPriv, KeyPub);
-        //}
+        public KeyWrapper ImportKey(TpmHandle parentHandle, KeyDuplicate dupe)
+        {
+            TpmPublic childKeyPublic = GetChildKeyPublic();
+            TpmPrivate childKeyPrivate = _tbsTpm.Import(
+                parentHandle,
+                dupe.EncKey,
+                dupe.Public,
+                dupe.Private,
+                dupe.Seed,
+                GetmAesSymObj());
+            return LoadChildKey(parentHandle, childKeyPrivate, dupe.Public);
+        }
 
         public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, KeyWrapper parentKey)
             => LoadChildKeyExternal(childKeyPrivateBytes, parentKey.Handle);
@@ -283,7 +235,7 @@ namespace TpmStorageHandler
             );
         }
 
-        public KeyWrapper LoadChildKey(TpmHandle parentHandle, TpmPrivate childPrivate, TpmPublic childPublic)
+        public KeyWrapper LoadChildKey(TpmHandle parentHandle, TpmPrivate childPrivate, TpmPublic childPublic = null)
         {
             if (childPublic == null)
             {
@@ -293,17 +245,34 @@ namespace TpmStorageHandler
             return new KeyWrapper(childkeyHandle, childPublic, childPrivate);
         }
 
-        public byte[] Encrypt(string message, KeyWrapper key, out byte[] iv)
-            => Encrypt(Encoding.UTF8.GetBytes(message), key, out iv);
-
         public byte[] Encrypt(byte[] message, KeyWrapper key, out byte[] iv)
+            => Encrypt(message, key, null, out iv);
+
+        public byte[] Encrypt(byte[] message, KeyWrapper key, PolicySession? session, out byte[] iv)
         {
             iv = _tbsTpm.GetRandom(CFB_IV_SIZE);
-            return _tbsTpm.EncryptDecrypt(key.Handle, 1, TpmAlgId.Null, iv, message, out byte[] _);
+            if (session.HasValue)
+            {
+                return _tbsTpm[session.Value.AuthSession].EncryptDecrypt(
+                    key.Handle, 0, TpmAlgId.Null, iv, message, out byte[] _);
+            }
+            return _tbsTpm.EncryptDecrypt(
+                key.Handle, 0, TpmAlgId.Null, iv, message, out byte[] _);
         }
 
         public byte[] Decrypt(byte[] encMessage, KeyWrapper key, byte[] iv)
-            => _tbsTpm.EncryptDecrypt(key.Handle, 1, TpmAlgId.Null, iv, encMessage, out byte[] _);
+            => Decrypt(encMessage, key, null, iv);
+
+        public byte[] Decrypt(byte[] encMessage, KeyWrapper key, PolicySession? session, byte[] iv)
+        {
+            if (session.HasValue)
+            {
+                return _tbsTpm[session.Value.AuthSession].EncryptDecrypt(
+                    key.Handle, 1, TpmAlgId.Null, iv, encMessage, out byte[] _);
+            }
+            return _tbsTpm.EncryptDecrypt(
+                key.Handle, 1, TpmAlgId.Null, iv, encMessage, out byte[] _);
+        }
 
         public byte[] RsaEncrypt(KeyWrapper key, byte[] message)
             => _tbsTpm.RsaEncrypt(key.Handle, message, new SchemeOaep(TpmAlgId.Sha1), null);
@@ -315,5 +284,34 @@ namespace TpmStorageHandler
         //{
         //    _tbsTpm
         //}
+
+        public PolicySession StartDuplicatePolicySession()
+        {
+            AuthSession session = _tbsTpm.StartAuthSessionEx(TpmSe.Policy, TpmAlgId.Sha256);
+            PolicyTree policy = new PolicyTree(TpmAlgId.Sha256);
+            policy.Create(new PolicyAce[]
+            {
+                new TpmPolicyCommand(TpmCc.Duplicate),
+                "duplicate"
+            });
+            session.RunPolicy(_tbsTpm, policy, "duplicate");
+
+            return new PolicySession(session, policy);
+        }
+
+        public PolicySession StartEncryptDecryptPolicySession()
+        {
+            AuthSession session = _tbsTpm.StartAuthSessionEx(TpmSe.Policy, TpmAlgId.Sha256);
+            PolicyTree policy = new PolicyTree(TpmAlgId.Sha256);
+            const string encDecPolBranch = "encDec";
+            policy.Create(new PolicyAce[]
+            {
+                new TpmPolicyCommand(_supportedEncDecCc),
+                encDecPolBranch
+            });
+            session.RunPolicy(_tbsTpm, policy, encDecPolBranch);
+
+            return new PolicySession(session, policy);
+        }
     }
 }

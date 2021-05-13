@@ -21,28 +21,30 @@ namespace TpmStorageHandler
 
         public struct KeyDuplicate
         {
-            public byte[] EncKeyOut { get; private set; }
-            public TpmPrivate Duplicate { get; private set; }
+            public byte[] EncKey { get; private set; }
             public byte[] Seed { get; private set; }
+            public TpmPrivate Private { get; private set; }
+            public TpmPublic Public { get; private set; }
 
-            public KeyDuplicate(byte[] encKeyOut, TpmPrivate duplciate, byte[] seed)
+            public KeyDuplicate(byte[] encKey, byte[] seed, TpmPrivate tpmPrivate, TpmPublic tpmPublic)
             {
-                this.EncKeyOut = encKeyOut;
-                this.Duplicate = duplciate;
+                this.EncKey = encKey;
                 this.Seed = seed;
+                this.Private = tpmPrivate;
+                this.Public = tpmPublic;
             }
         }
 
         public struct PolicySession
         {
-            public AuthSession Session { get; private set; }
+            public AuthSession AuthSession { get; private set; }
             public PolicyTree PolicyTree { get; private set; }
 
             public TpmHash PolicyHash => PolicyTree.GetPolicyDigest();
 
-            public PolicySession(AuthSession session, PolicyTree policyTree)
+            public PolicySession(AuthSession authSession, PolicyTree policyTree)
             {
-                this.Session = session;
+                this.AuthSession = authSession;
                 this.PolicyTree = policyTree;
             }
         }
