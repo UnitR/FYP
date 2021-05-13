@@ -21,10 +21,7 @@ namespace TpmTest
         private const string TEST_MESSAGE = "ABCD";
 
         private static KeyWrapper GeneratePrimaryKey(Tpm2Wrapper tpm)
-        {
-            TpmHandle handle = tpm.CreatePrimaryStorageKey(out TpmPublic pubKey);
-            return new KeyWrapper(handle, pubKey);
-        }
+            => tpm.CreatePrimaryStorageKey();
 
         private static KeyWrapper GenerateChildKey(TpmHandle primHandle, Tpm2Wrapper tpm, byte[] authSession = null)
             => tpm.CreateChildKey(primHandle, authSession);
@@ -62,8 +59,6 @@ namespace TpmTest
             KeyWrapper result = GeneratePrimaryKey(tpm);
             
             Assert.IsNotNull(result.KeyPub);
-
-            CleanUp(tpm, new TpmHandle[] {result.Handle});
         }
 
         [TestMethod]
@@ -108,7 +103,7 @@ namespace TpmTest
 
             Assert.AreEqual(expected, result);
 
-            CleanUp(tpm, new TpmHandle[] { primKey.Handle, childKey.Handle });
+            CleanUp(tpm, new TpmHandle[] { childKey.Handle });
         }
 
         [TestMethod]
@@ -122,7 +117,7 @@ namespace TpmTest
             KeyWrapper childKey = GenerateChildKey(primKey.Handle, tpm, dupeSession.PolicyHash);
 
             // Private child key. Use the same session the key was created under.
-            KeyDuplicate childDupe = tpm.DuplicateChildKey(childKey, primKey, dupeSession);
+            KeyDuplicate childDupe = tpm.DuplicateChildKey(childKey, primKey, dupeSession, new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb));
 
             // No longer need the duplicate session
             tpm.FlushContext(dupeSession.AuthSession);
@@ -153,7 +148,7 @@ namespace TpmTest
             // Save data on disk
             SaveFile(_dupekeyFileName, fedJson, out StorageFile _);
 
-            CleanUp(tpm, new TpmHandle[] { primKey.Handle, childKey.Handle });
+            CleanUp(tpm, new TpmHandle[] { childKey.Handle });
         }
 
         [TestMethod]
@@ -174,7 +169,7 @@ namespace TpmTest
                 fed.EncryptionSeed,
                 fed.PrivateArea,
                 fed.PublicArea);
-            KeyWrapper childKey = tpm.ImportKey(primKey.Handle, keyDupe);
+            KeyWrapper childKey = tpm.ImportKey(primKey, keyDupe, new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb));
 
             // Test to see if the key was loaded
             Assert.IsNotNull(childKey.Handle);
@@ -191,9 +186,10 @@ namespace TpmTest
             tpm.FlushContext(encDecSession.AuthSession);
 
             // And then check equality
-            Assert.Equals(TEST_MESSAGE, Encoding.UTF8.GetString(decMessage));
+            Assert.IsNotNull(decMessage);
+            Assert.AreEqual(TEST_MESSAGE, Encoding.UTF8.GetString(decMessage));
 
-            CleanUp(tpm, new TpmHandle[] {primKey.Handle, childKey.Handle});
+            CleanUp(tpm, new TpmHandle[] {childKey.Handle});
         }
 
         [TestMethod]
