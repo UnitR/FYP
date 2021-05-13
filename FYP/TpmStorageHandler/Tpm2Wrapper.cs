@@ -1,38 +1,12 @@
 ﻿using System;
 using System.Text;
 using Tpm2Lib;
+using TpmStorageHandler.Structures;
 
 namespace TpmStorageHandler
 {
     public sealed class Tpm2Wrapper : IDisposable
     {
-        public struct KeyWrapper
-        {
-            public readonly TpmHandle handle;
-            public readonly TpmPublic keyPub;
-            public readonly TpmPrivate keyPriv;
-
-            public KeyWrapper(TpmHandle handle, TpmPublic keyPublic, TpmPrivate keyPrivate = null)
-            {
-                this.handle = handle;
-                this.keyPub = keyPublic;
-                this.keyPriv = keyPrivate;
-            }
-        }
-
-        public struct KeyDuplicate
-        {
-            public byte[] encKeyOut;
-            public TpmPrivate duplicate;
-            public byte[] seed;
-
-            public KeyDuplicate(byte[] encKeyOut, TpmPrivate duplciate, byte[] seed)
-            {
-                this.encKeyOut = encKeyOut;
-                this.duplicate = duplciate;
-                this.seed = seed;
-            }
-        }
 
         #region --------------- Constants --------------- 
         private const string DEFAULT_TPM_SERVER = "127.0.0.1";
@@ -285,13 +259,13 @@ namespace TpmStorageHandler
 
         //public TpmHandle ImportKey(TpmHandle parentHandle, KeyDuplicate dupe)
         //{
-        //    TpmPublic keyPub = GetChildKeyPublic();
-        //    TpmPrivate keyPriv = _tbsTpm.Import(parentHandle, dupe.encKeyOut, keyPub, dupe.duplicate, dupe.seed, GetmAesSymObj());
-        //    return LoadChildKey(parentHandle, keyPriv, keyPub);
+        //    TpmPublic KeyPub = GetChildKeyPublic();
+        //    TpmPrivate KeyPriv = _tbsTpm.Import(parentHandle, dupe.EncKeyOut, KeyPub, dupe.Duplicate, dupe.Seed, GetmAesSymObj());
+        //    return LoadChildKey(parentHandle, KeyPriv, KeyPub);
         //}
 
         public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, KeyWrapper parentKey)
-            => LoadChildKeyExternal(childKeyPrivateBytes, parentKey.handle);
+            => LoadChildKeyExternal(childKeyPrivateBytes, parentKey.Handle);
 
         public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, TpmHandle parentHandle)
         {
@@ -325,17 +299,17 @@ namespace TpmStorageHandler
         public byte[] Encrypt(byte[] message, KeyWrapper key, out byte[] iv)
         {
             iv = _tbsTpm.GetRandom(CFB_IV_SIZE);
-            return _tbsTpm.EncryptDecrypt(key.handle, 1, TpmAlgId.Null, iv, message, out byte[] _);
+            return _tbsTpm.EncryptDecrypt(key.Handle, 1, TpmAlgId.Null, iv, message, out byte[] _);
         }
 
         public byte[] Decrypt(byte[] encMessage, KeyWrapper key, byte[] iv)
-            => _tbsTpm.EncryptDecrypt(key.handle, 1, TpmAlgId.Null, iv, encMessage, out byte[] _);
+            => _tbsTpm.EncryptDecrypt(key.Handle, 1, TpmAlgId.Null, iv, encMessage, out byte[] _);
 
         public byte[] RsaEncrypt(KeyWrapper key, byte[] message)
-            => _tbsTpm.RsaEncrypt(key.handle, message, new SchemeOaep(TpmAlgId.Sha1), null);
+            => _tbsTpm.RsaEncrypt(key.Handle, message, new SchemeOaep(TpmAlgId.Sha1), null);
 
         public byte[] RsaDecrypt(KeyWrapper key, byte[] encMessage)
-            => _tbsTpm.RsaDecrypt(key.handle, encMessage, new SchemeOaep(TpmAlgId.Sha1), null);
+            => _tbsTpm.RsaDecrypt(key.Handle, encMessage, new SchemeOaep(TpmAlgId.Sha1), null);
 
         //public void Seal()
         //{
