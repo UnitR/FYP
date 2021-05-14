@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Text;
-using Windows.Services.Maps;
 using Tpm2Lib;
 using TpmStorageHandler.Structures;
 
@@ -59,8 +57,8 @@ namespace TpmStorageHandler
             // Auth-value to control later access to hash objects
             _authVal = new AuthValue();
 
-            _supportedEncDecCc = 
-                _tbsTpm.Helpers.IsImplemented(TpmCc.EncryptDecrypt2) ? 
+            _supportedEncDecCc =
+                _tbsTpm.Helpers.IsImplemented(TpmCc.EncryptDecrypt2) ?
                     TpmCc.EncryptDecrypt2 : TpmCc.EncryptDecrypt;
         }
 
@@ -71,7 +69,7 @@ namespace TpmStorageHandler
                 if (disposing)
                 {
                     // Never leave lingering connections to the TPM
-                    _tbsTpm.Shutdown(Su.Clear);
+                    //_tbsTpm.Clear(TpmHandle.RhOwner);
                     _tbs?.Dispose();
                     _tbsTpm?.Dispose();
                 }
@@ -109,11 +107,8 @@ namespace TpmStorageHandler
         private static TpmPublic GetChildKeyPublic(byte[] authSession = null)
             => new TpmPublic(
                 TpmAlgId.Sha256,
-                ObjectAttr.Decrypt | ObjectAttr.Encrypt
-                | ObjectAttr.EncryptedDuplication
-                | ObjectAttr.UserWithAuth
-                | ObjectAttr.SensitiveDataOrigin
-                | ObjectAttr.AdminWithPolicy,       // allow duplication
+                ObjectAttr.UserWithAuth
+                | ObjectAttr.SensitiveDataOrigin,       // allow duplication
                 authSession,                        // expected policy hash
                 new SymcipherParms(
                     GetmAesSymObj()
@@ -182,7 +177,7 @@ ObjectAttr.Decrypt                                                          // S
             TpmPublic persPublic = _tbsTpm.
                 _AllowErrors().
                 ReadPublic(persistent, out byte[] name, out byte[] qName);
-            
+
             // If failed to retrieve the primary key, generate it
             if (!_tbsTpm._LastCommandSucceeded())
             {
@@ -191,24 +186,37 @@ ObjectAttr.Decrypt                                                          // S
 
             return new KeyWrapper(persistent, persPublic);
         }
-        
-        public KeyWrapper CreateChildKey(TpmHandle primHandle, byte[] authSession = null)
+
+        public KeyWrapper CreateStorageParentKey(TpmHandle primHandle, byte[] authSession = null)
         {
-            TpmPublic childKeyTemplate = GetChildKeyPublic(authSession);
+            // Restricted-Decrypt is referred to as a Storage Parent.
+            // This will be the parent of all other keys for individual files.
+            TpmPublic keyTemplate = new TpmPublic(
+                TpmAlgId.Sha256,
+                ObjectAttr.Restricted | ObjectAttr.Decrypt 
+                                      | ObjectAttr.EncryptedDuplication
+                                      | ObjectAttr.UserWithAuth
+                                      | ObjectAttr.SensitiveDataOrigin
+                                      | ObjectAttr.AdminWithPolicy, // allow duplication
+                authSession, // expected policy hash
+                new SymcipherParms(
+                    GetmAesSymObj()
+                ),
+                new Tpm2bDigestSymcipher());
 
             AuthValue auth = new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
             TpmPrivate childKeyPrivate = _tbsTpm[auth].Create(
                 primHandle,
                 new SensitiveCreate(SENS_PRIM_KEY_AUTH_VAL, null),
-                childKeyTemplate,
+                keyTemplate,
                 null,
                 new PcrSelection[0],
-                out childKeyTemplate,
+                out keyTemplate,
                 out CreationData ckCreationData,
                 out byte[] ckCreationHash,
                 out TkCreation ckCreationTicket);
 
-            return LoadChildKey(primHandle, childKeyPrivate, auth, childKeyTemplate);
+            return LoadObject(primHandle, childKeyPrivate, keyTemplate, auth);
         }
 
         /// <summary>
@@ -229,7 +237,7 @@ ObjectAttr.Decrypt                                                          // S
             }
             byte[] encKeyOut =
                 _tbsTpm[policySession.AuthSession]
-                    .Duplicate(childKey.Handle, newParent.Handle, null, symDef, 
+                    .Duplicate(childKey.Handle, newParent.Handle, null, symDef,
                         out var duplicate, out var seed);
 
             return new KeyDuplicate(encKeyOut, seed, duplicate, childKey.KeyPub);
@@ -250,7 +258,7 @@ ObjectAttr.Decrypt                                                          // S
             AuthValue authValue = new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
             PolicySession authSession = StartImportPolicySession();
             TpmPrivate dupePrivate =
-                _tbsTpm._SetSessions(authSession.AuthSession)[authValue]
+                _tbsTpm[authValue]
                     .Import(
                         parent.Handle,
                         encKey,
@@ -258,9 +266,9 @@ ObjectAttr.Decrypt                                                          // S
                         dupe.Private,
                         inSymSeed,
                         symDef);
-            
+
             // Load the imported key
-            return LoadChildKey(parent.Handle, dupePrivate, authValue, dupe.Public);
+            return LoadObject(parent.Handle, dupePrivate, dupe.Public, authValue);
         }
 
         public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, KeyWrapper parentKey)
@@ -274,7 +282,7 @@ ObjectAttr.Decrypt                                                          // S
                 childKeyPublic,
                 parentHandle
             );
-            
+
             return new KeyWrapper(
                 childKeyHandle,
                 childKeyPublic,
@@ -282,14 +290,13 @@ ObjectAttr.Decrypt                                                          // S
             );
         }
 
-        public KeyWrapper LoadChildKey(TpmHandle parentHandle, TpmPrivate childPrivate, AuthValue auth, TpmPublic childPublic = null)
+        public KeyWrapper LoadObject(TpmHandle parentHandle, TpmPrivate objPrivate, TpmPublic objPublic,
+            AuthValue auth)
         {
-            if (childPublic == null)
-            {
-                childPublic = GetChildKeyPublic();
-            }
-            TpmHandle childKeyHandle = _tbsTpm[auth].Load(parentHandle, childPrivate, childPublic);
-            return new KeyWrapper(childKeyHandle, childPublic, childPrivate);
+            // Default to the primary auth
+            auth = auth ?? new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
+            TpmHandle objHandle = _tbsTpm[auth].Load(parentHandle, objPrivate, objPublic);
+            return new KeyWrapper(objHandle, objPublic, objPrivate);
         }
 
         public byte[] Encrypt(byte[] message, KeyWrapper key, out byte[] iv)
@@ -370,6 +377,73 @@ ObjectAttr.Decrypt                                                          // S
             session.RunPolicy(_tbsTpm, policy, "import");
 
             return new PolicySession(session, policy);
+        }
+
+        public KeyWrapper CreateSensitiveDataObject(KeyWrapper storageParent, byte[] authPolicy, TpmPublic template = null)
+        {
+            if (template != null)
+            {
+                if (template.objectAttributes.HasFlag(ObjectAttr.Encrypt)
+                    || template.objectAttributes.HasFlag(ObjectAttr.Sign))
+                {
+                    throw new ArgumentException(
+                        "The file key must be created as a Sensitive Data Object. This means NOT setting Object Attributes Encrypt and Sign ");
+                }
+                else if (template.objectAttributes.HasFlag(ObjectAttr.Decrypt))
+                {
+                    throw new ArgumentException(
+                        "The sensitive data object cannot have a Decrypt attribute set. That will prevent unsealing for encryption.");
+                }
+            }
+
+            // Authentication
+            AuthValue authValue = new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
+
+            // Create an inner symmetric key to be used as the data for generating
+            // the sealed object for file encryption
+            TpmPublic innerKeyPub = new TpmPublic(
+                TpmAlgId.Sha256,
+                ObjectAttr.UserWithAuth
+                | ObjectAttr.SensitiveDataOrigin,
+                authPolicy,
+                new SymcipherParms(
+                    GetmAesSymObj()
+                ),
+                new Tpm2bDigestSymcipher());
+            TpmPrivate innerKeyPriv = _tbsTpm[authValue].Create(
+                storageParent.Handle,
+                new SensitiveCreate(SENS_KEY_AUTH_VAL, null),
+                innerKeyPub,
+                new byte[0],
+                new PcrSelection[0],
+                out innerKeyPub,
+                out CreationData _,
+                out byte[] _,
+                out TkCreation _);
+            TpmHandle innerKeyHandle = _tbsTpm[authValue].Load(storageParent.Handle, innerKeyPriv, innerKeyPub);
+
+            // Create the sealed object from the key
+            TpmPublic objPub
+                = template
+                  ??
+                  new TpmPublic(
+                      TpmAlgId.Sha256,
+                      ObjectAttr.UserWithAuth,
+                      authPolicy,
+                      new KeyedhashParms(),
+                      new Tpm2bDigestKeyedhash());
+            TpmPrivate objPriv = _tbsTpm[authValue].Create(
+                storageParent.Handle,
+                new SensitiveCreate(SENS_KEY_AUTH_VAL, innerKeyHandle),
+                objPub,
+                new byte[0],
+                new PcrSelection[0],
+                out objPub,
+                out CreationData ckCreationData,
+                out byte[] ckCreationHash,
+                out TkCreation ckCreationTicket);
+
+            return LoadObject(storageParent.Handle, objPriv, objPub, authValue);
         }
     }
 }

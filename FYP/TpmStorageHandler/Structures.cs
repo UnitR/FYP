@@ -1,24 +1,47 @@
 ﻿using System;
+using Newtonsoft.Json;
 using Tpm2Lib;
 
 namespace TpmStorageHandler
 {
     namespace Structures
     {
-        public struct KeyWrapper
+        [JsonObject(MemberSerialization.OptIn)]
+        public class KeyWrapper
         {
             public TpmHandle Handle { get; private set; }
+
             public TpmPublic KeyPub { get; private set; }
+
             public TpmPrivate KeyPriv { get; private set; }
+
+            [JsonProperty(propertyName: "privateArea")]
+            private readonly byte[] _private;
+
+            [JsonProperty(propertyName: "publicArea")]
+            private readonly byte[] _public;
+
+            [JsonConstructor]
+            public KeyWrapper(byte[] publicArea, byte[] privateArea)
+            {
+                _private = privateArea;
+                _public = publicArea;
+
+                KeyPriv = Marshaller.FromTpmRepresentation<TpmPrivate>(_private);
+                KeyPub = Marshaller.FromTpmRepresentation<TpmPublic>(_public);
+            }
 
             public KeyWrapper(TpmHandle handle, TpmPublic keyPublic, TpmPrivate keyPrivate = null)
             {
                 this.Handle = handle;
                 this.KeyPub = keyPublic;
                 this.KeyPriv = keyPrivate;
+
+                this._public = keyPublic.GetTpmRepresentation();
+                this._private = keyPrivate?.GetTpmRepresentation();
             }
         }
-
+        
         public struct KeyDuplicate
         {
             public byte[] EncKey { get; private set; }
