@@ -21,7 +21,7 @@ namespace TpmTest
         private const string TEST_MESSAGE = "ABCD";
 
         private static KeyWrapper GeneratePrimaryKey(Tpm2Wrapper tpm)
-            => tpm.CreatePrimaryStorageKey();
+            => tpm.GetPrimaryStorageKey();
 
         private static KeyWrapper GenerateChildKey(TpmHandle primHandle, Tpm2Wrapper tpm, byte[] authSession = null)
             => tpm.CreateChildKey(primHandle, authSession);
@@ -41,6 +41,12 @@ namespace TpmTest
             StorageFile file = storageFolder
                 .GetFileAsync(fileName).GetAwaiter().GetResult();
             return FileIO.ReadTextAsync(file).GetAwaiter().GetResult();
+        }
+
+        private static FileEncryptionData LoadEncryptionDataFromFile(string fileName = _dupekeyFileName)
+        {
+            string fedJson = LoadFile(fileName);
+            return JsonConvert.DeserializeObject<FileEncryptionData>(fedJson);
         }
 
         private static void CleanUp(Tpm2Wrapper tpm, TpmHandle[] contexts)
@@ -107,7 +113,7 @@ namespace TpmTest
         }
 
         [TestMethod]
-        public void TestSaveDuplicate()
+        public void TestDuplicateEncrypt()
         {
             Tpm2Wrapper tpm = new Tpm2Wrapper();
             KeyWrapper primKey = GeneratePrimaryKey(tpm);
@@ -116,8 +122,13 @@ namespace TpmTest
             PolicySession dupeSession = tpm.StartDuplicatePolicySession();
             KeyWrapper childKey = GenerateChildKey(primKey.Handle, tpm, dupeSession.PolicyHash);
 
+            //// New parent
+            //KeyWrapper newParent = tpm.LoadExternal(primKey.KeyPub);
+
             // Private child key. Use the same session the key was created under.
-            KeyDuplicate childDupe = tpm.DuplicateChildKey(childKey, primKey, dupeSession, new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb));
+            KeyDuplicate childDupe = tpm.DuplicateChildKey(
+                childKey, primKey, dupeSession,
+                new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb));
 
             // No longer need the duplicate session
             tpm.FlushContext(dupeSession.AuthSession);
@@ -152,14 +163,12 @@ namespace TpmTest
         }
 
         [TestMethod]
-        public void TestLoadDuplicate()
+        public void TestImportDuplicateDecrypt()
         {
             Tpm2Wrapper tpm = new Tpm2Wrapper();
             KeyWrapper primKey = GeneratePrimaryKey(tpm);
 
-            string fedJson = LoadFile(_dupekeyFileName);
-            FileEncryptionData fed = 
-                JsonConvert.DeserializeObject<FileEncryptionData>(fedJson);
+            FileEncryptionData fed = LoadEncryptionDataFromFile();
 
             // File should not be empty
             Assert.IsNotNull(fed);
@@ -167,9 +176,11 @@ namespace TpmTest
             KeyDuplicate keyDupe = new KeyDuplicate(
                 fed.EncryptionKey,
                 fed.EncryptionSeed,
-                fed.PrivateArea,
-                fed.PublicArea);
-            KeyWrapper childKey = tpm.ImportKey(primKey, keyDupe, new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb));
+                Marshaller.FromTpmRepresentation<TpmPrivate>(fed.KeyPrivate),
+                Marshaller.FromTpmRepresentation<TpmPublic>(fed.KeyPublic));
+            KeyWrapper childKey = tpm.ImportKey(
+                primKey, keyDupe,
+                new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb));
 
             // Test to see if the key was loaded
             Assert.IsNotNull(childKey.Handle);

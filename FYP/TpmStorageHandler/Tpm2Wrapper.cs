@@ -110,7 +110,7 @@ namespace TpmStorageHandler
             => new TpmPublic(
                 TpmAlgId.Sha256,
                 ObjectAttr.Decrypt | ObjectAttr.Encrypt
-                | ObjectAttr.EncryptedDuplication                                   
+                | ObjectAttr.EncryptedDuplication
                 | ObjectAttr.UserWithAuth
                 | ObjectAttr.SensitiveDataOrigin
                 | ObjectAttr.AdminWithPolicy,       // allow duplication
@@ -135,8 +135,7 @@ namespace TpmStorageHandler
             // Key parameters
             TpmPublic keyTemplate = new TpmPublic(
                 TpmAlgId.Sha256,
-                ObjectAttr.AdminWithPolicy
-                | ObjectAttr.Decrypt                                                          // Storage keys are decryption keys,
+ObjectAttr.Decrypt                                                          // Storage keys are decryption keys,
                 | ObjectAttr.Restricted                                                     // Must be restricted - per definition
                 | ObjectAttr.FixedParent | ObjectAttr.FixedTPM                              // fixed parent, cannot be duplicated
                 | ObjectAttr.UserWithAuth                                                   // authenticate users with HMAC or PWAP
@@ -174,7 +173,7 @@ namespace TpmStorageHandler
         /// Creates a storage key: 2048 bit RSA paired with a 128-bit AES/CFB key.
         /// </summary>
         /// <returns></returns>
-        public KeyWrapper CreatePrimaryStorageKey()
+        public KeyWrapper GetPrimaryStorageKey()
         {
             // Set up a persistent handle
             TpmHandle persistent = TpmHandle.Persistent(0x5555);
@@ -224,9 +223,13 @@ namespace TpmStorageHandler
         /// </returns>
         public KeyDuplicate DuplicateChildKey(KeyWrapper childKey, KeyWrapper newParent, PolicySession policySession, SymDefObject symDef = null)
         {
+            if (symDef == null)
+            {
+                symDef = SymDefObject.NullObject();
+            }
             byte[] encKeyOut =
                 _tbsTpm[policySession.AuthSession]
-                    .Duplicate(childKey.Handle, newParent.Handle, null, symDef ?? new SymDefObject(), 
+                    .Duplicate(childKey.Handle, newParent.Handle, null, symDef, 
                         out var duplicate, out var seed);
 
             return new KeyDuplicate(encKeyOut, seed, duplicate, childKey.KeyPub);
@@ -234,18 +237,30 @@ namespace TpmStorageHandler
 
         public KeyWrapper ImportKey(KeyWrapper parent, KeyDuplicate dupe, SymDefObject symDef = null)
         {
-            //PolicySession session = StartImportPolicySession();
-            AuthValue auth = new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
-            TpmPrivate dupePrivate = _tbsTpm[auth].Import(
-                parent.Handle,
-                dupe.EncKey,
-                dupe.Public,
-                dupe.Private,
-                dupe.Seed,
-                symDef ?? new SymDefObject());
+            // Params for import - depending on the symmetric algorithm provided
+            byte[] encKey = symDef == null ? new byte[0] : dupe.EncKey;
+            byte[] inSymSeed = symDef == null ? new byte[0] : dupe.Seed;
+
+            // Avoid null values - leads to an error return code
+            if (symDef == null)
+            {
+                symDef = SymDefObject.NullObject();
+            }
+
+            AuthValue authValue = new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
+            PolicySession authSession = StartImportPolicySession();
+            TpmPrivate dupePrivate =
+                _tbsTpm._SetSessions(authSession.AuthSession)[authValue]
+                    .Import(
+                        parent.Handle,
+                        encKey,
+                        dupe.Public,
+                        dupe.Private,
+                        inSymSeed,
+                        symDef);
             
             // Load the imported key
-            return LoadChildKey(parent.Handle, dupePrivate, auth, dupe.Public);
+            return LoadChildKey(parent.Handle, dupePrivate, authValue, dupe.Public);
         }
 
         public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, KeyWrapper parentKey)
