@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Tpm2Lib;
 using TpmStorageHandler.Structures;
 
@@ -356,6 +357,82 @@ ObjectAttr.Decrypt                                                          // S
         public byte[] RsaDecrypt(KeyWrapper key, byte[] encMessage)
             => _tbsTpm.RsaDecrypt(key.Handle, encMessage, new SchemeOaep(TpmAlgId.Sha1), null);
 
+        public KeyWrapper CreateSensitiveDataObject(KeyWrapper storageParent, PolicySession policy, TpmPublic template = null, byte[] objectData = null)
+        {
+            if (template != null)
+            {
+                if (template.objectAttributes.HasFlag(ObjectAttr.Encrypt)
+                    || template.objectAttributes.HasFlag(ObjectAttr.Sign))
+                {
+                    throw new ArgumentException(
+                        "The file key must be created as a Sensitive Data Object. This means NOT setting Object Attributes Encrypt and Sign ");
+                }
+                else if (template.objectAttributes.HasFlag(ObjectAttr.Decrypt))
+                {
+                    throw new ArgumentException(
+                        "The sensitive data object cannot have a Decrypt attribute set. That will prevent unsealing for encryption.");
+                }
+            }
+
+            // Authentication
+            AuthValue authValue = new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
+
+            // Determine object attributes based on parent
+            ObjectAttr attr = ObjectAttr.UserWithAuth;
+            if (storageParent.KeyPub.objectAttributes.HasFlag(ObjectAttr.EncryptedDuplication))
+            {
+                // Encrypted duplication is required to be set if the parent has the same attribute
+                attr |= ObjectAttr.EncryptedDuplication;
+            }
+
+            // Create the sealed object from random bits
+            if (objectData == null)
+            {
+                const ushort keyLength = 16;
+                objectData = _tbsTpm.GetRandom(keyLength);
+                // Some TPM implementations might return less than the requested number of bytes
+                int numPasses = Convert.ToInt32(Math.Ceiling((double) keyLength / objectData.Length));
+                int digestSize = objectData.Length;
+                if (numPasses > 1)
+                {
+                    for (int i = 1; i < numPasses; i++)
+                    {
+                        objectData = objectData.Concat(GetRandom((ushort)digestSize)).ToArray();
+                    }
+                    if (objectData.Length > keyLength)
+                    {
+                        objectData = objectData.Take(keyLength).ToArray();
+                    }
+                }
+            }
+            TpmPublic objPub
+                = template
+                  ??
+                  new TpmPublic(
+                      TpmAlgId.Sha256,
+                      attr,
+                      policy.PolicyHash,
+                      new KeyedhashParms(),
+                      new Tpm2bDigestKeyedhash());
+            TpmPrivate objPriv = _tbsTpm[authValue].Create(
+                storageParent.Handle,
+                new SensitiveCreate(
+                    SENS_KEY_AUTH_VAL, 
+                    objectData
+                ),
+                objPub,
+                new byte[0],
+                new PcrSelection[0],
+                out objPub,
+                out CreationData ckCreationData,
+                out byte[] ckCreationHash,
+                out TkCreation ckCreationTicket);
+
+            return LoadObject(storageParent.Handle, objPriv, objPub, authValue);
+        }
+
+        public byte[] UnsealObject(KeyWrapper sealedObj, PolicySession session) => _tbsTpm[session.AuthSession].Unseal(sealedObj.Handle);
+
         public PolicySession StartDuplicatePolicySession()
         {
             AuthSession session = _tbsTpm.StartAuthSessionEx(TpmSe.Policy, TpmAlgId.Sha256);
@@ -399,71 +476,34 @@ ObjectAttr.Decrypt                                                          // S
             return new PolicySession(session, policy);
         }
 
-        public KeyWrapper CreateSensitiveDataObject(KeyWrapper storageParent, byte[] authPolicy, TpmPublic template = null)
+        public PolicySession StartKeyedHashSession()
         {
-            if (template != null)
+            const string sessionBranchName = "create";
+            AuthSession session = _tbsTpm.StartAuthSessionEx(TpmSe.Policy, TpmAlgId.Sha256);
+
+            PcrSelection[] pcrsToQuote = new PcrSelection[]
             {
-                if (template.objectAttributes.HasFlag(ObjectAttr.Encrypt)
-                    || template.objectAttributes.HasFlag(ObjectAttr.Sign))
-                {
-                    throw new ArgumentException(
-                        "The file key must be created as a Sensitive Data Object. This means NOT setting Object Attributes Encrypt and Sign ");
-                }
-                else if (template.objectAttributes.HasFlag(ObjectAttr.Decrypt))
-                {
-                    throw new ArgumentException(
-                        "The sensitive data object cannot have a Decrypt attribute set. That will prevent unsealing for encryption.");
-                }
-            }
+                new PcrSelection(TpmAlgId.Sha256, new uint[] { 1, 2, 3 })
+            };
+            _tbsTpm.PcrRead(
+                pcrsToQuote,
+                out pcrsToQuote,
+                out Tpm2bDigest[] pcrValues);
+            var expectedPcrsVals = new PcrValueCollection(pcrsToQuote, pcrValues);
 
-            // Authentication
-            AuthValue authValue = new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
+            PolicyTree policy = new PolicyTree(TpmAlgId.Sha256);
+            policy.Create(new PolicyAce[]
+            {
+                new TpmPolicyLocality(LocalityAttr.TpmLocZero),
+                new TpmPolicyPcr(expectedPcrsVals),
+                sessionBranchName
+            });
+            session.RunPolicy(_tbsTpm, policy, sessionBranchName);
 
-            // Create an inner symmetric key to be used as the data for generating
-            // the sealed object for file encryption
-            TpmPublic innerKeyPub = new TpmPublic(
-                TpmAlgId.Sha256,
-                ObjectAttr.UserWithAuth
-                | ObjectAttr.SensitiveDataOrigin,
-                authPolicy,
-                new SymcipherParms(
-                    GetmAesSymObj()
-                ),
-                new Tpm2bDigestSymcipher());
-            TpmPrivate innerKeyPriv = _tbsTpm[authValue].Create(
-                storageParent.Handle,
-                new SensitiveCreate(SENS_KEY_AUTH_VAL, null),
-                innerKeyPub,
-                new byte[0],
-                new PcrSelection[0],
-                out innerKeyPub,
-                out CreationData _,
-                out byte[] _,
-                out TkCreation _);
-            TpmHandle innerKeyHandle = _tbsTpm[authValue].Load(storageParent.Handle, innerKeyPriv, innerKeyPub);
-
-            // Create the sealed object from the key
-            TpmPublic objPub
-                = template
-                  ??
-                  new TpmPublic(
-                      TpmAlgId.Sha256,
-                      ObjectAttr.UserWithAuth,
-                      authPolicy,
-                      new KeyedhashParms(),
-                      new Tpm2bDigestKeyedhash());
-            TpmPrivate objPriv = _tbsTpm[authValue].Create(
-                storageParent.Handle,
-                new SensitiveCreate(SENS_KEY_AUTH_VAL, innerKeyHandle),
-                objPub,
-                new byte[0],
-                new PcrSelection[0],
-                out objPub,
-                out CreationData ckCreationData,
-                out byte[] ckCreationHash,
-                out TkCreation ckCreationTicket);
-
-            return LoadObject(storageParent.Handle, objPriv, objPub, authValue);
+            return new PolicySession(session, policy);
         }
+
+        public byte[] GetRandom(ushort bytesRequested)
+            => _tbsTpm.GetRandom(bytesRequested);
     }
 }
