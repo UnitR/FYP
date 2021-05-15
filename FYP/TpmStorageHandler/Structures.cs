@@ -37,8 +37,15 @@ namespace TpmStorageHandler
                 this.KeyPub = keyPublic;
                 this.KeyPriv = keyPrivate;
 
-                this._public = keyPublic.GetTpmRepresentation();
-                this._private = keyPrivate?.GetTpmRepresentation();
+                if (keyPublic != null && keyPublic.unique != null)
+                {
+                    this._public = keyPublic?.GetTpmRepresentation();
+                }
+
+                if (keyPrivate != null && keyPrivate.buffer != null)
+                {
+                    this._private = keyPrivate?.GetTpmRepresentation();
+                }
             }
         }
         

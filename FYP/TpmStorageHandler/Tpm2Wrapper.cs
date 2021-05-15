@@ -7,6 +7,12 @@ namespace TpmStorageHandler
     public sealed class Tpm2Wrapper : IDisposable
     {
 
+        public enum TpmType
+        {
+            Simulator,
+            Physical
+        }
+
         #region --------------- Constants --------------- 
         private const string DEFAULT_TPM_SERVER = "127.0.0.1";
         private const int DEFAULT_TPM_PORT = 2321;
@@ -41,10 +47,23 @@ namespace TpmStorageHandler
 
         #endregion
 
-        public Tpm2Wrapper()
+        public Tpm2Wrapper() : this(TpmType.Simulator) {}
+
+        public Tpm2Wrapper(TpmType tpmType)
         {
-            Tpm2Device device = new TcpTpmDevice(DEFAULT_TPM_SERVER, DEFAULT_TPM_PORT);
-            device.Connect();
+            Tpm2Device device = null;
+            switch (tpmType)
+            {
+                case TpmType.Simulator:
+                    device = new TcpTpmDevice(DEFAULT_TPM_SERVER, DEFAULT_TPM_PORT);
+                    break;
+                case TpmType.Physical:
+                    // TODO: Connect to a physical device
+                    break;
+                default:
+                    throw new ArgumentException("Invalid TPM type connection.");
+            }
+            device?.Connect();
             Tpm2 tempTpm = new Tpm2(device);
 
             tempTpm._GetUnderlyingDevice().PowerCycle();
@@ -53,6 +72,14 @@ namespace TpmStorageHandler
             // Attach a managed TBS wrapper to the TPM for automatic resource management
             _tbs = new Tbs(tempTpm._GetUnderlyingDevice(), false);
             _tbsTpm = new Tpm2(_tbs.CreateTbsContext());
+
+            // If running on a simulator, reset the dictionary attack lockout
+            // as it is only intervenes in testing currently.
+            // TODO: Remove simulator reset for pre-production testing or testing specific functionality.
+            if (tpmType == TpmType.Simulator)
+            {
+                _tbsTpm.DictionaryAttackLockReset(TpmHandle.RhLockout);
+            }
 
             // Auth-value to control later access to hash objects
             _authVal = new AuthValue();
@@ -69,7 +96,7 @@ namespace TpmStorageHandler
                 if (disposing)
                 {
                     // Never leave lingering connections to the TPM
-                    //_tbsTpm.Clear(TpmHandle.RhOwner);
+                    //_tbsTpm.Shutdown(Su.Clear);
                     _tbs?.Dispose();
                     _tbsTpm?.Dispose();
                 }
@@ -168,7 +195,7 @@ ObjectAttr.Decrypt                                                          // S
         /// Creates a storage key: 2048 bit RSA paired with a 128-bit AES/CFB key.
         /// </summary>
         /// <returns></returns>
-        public KeyWrapper GetPrimaryStorageKey()
+        public KeyWrapper GetPrimaryStorageKey(bool generateIfMissing = false)
         {
             // Set up a persistent handle
             TpmHandle persistent = TpmHandle.Persistent(0x5555);
@@ -179,7 +206,7 @@ ObjectAttr.Decrypt                                                          // S
                 ReadPublic(persistent, out byte[] name, out byte[] qName);
 
             // If failed to retrieve the primary key, generate it
-            if (!_tbsTpm._LastCommandSucceeded())
+            if (!_tbsTpm._LastCommandSucceeded() && generateIfMissing)
             {
                 GeneratePrimaryKey(persistent, out persPublic);
             }
@@ -271,23 +298,16 @@ ObjectAttr.Decrypt                                                          // S
             return LoadObject(parent.Handle, dupePrivate, dupe.Public, authValue);
         }
 
-        public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, KeyWrapper parentKey)
-            => LoadChildKeyExternal(childKeyPrivateBytes, parentKey.Handle);
+        //public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, KeyWrapper parentKey)
+        //    => LoadChildKeyExternal(childKeyPrivateBytes, parentKey.Handle);
 
-        public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, TpmHandle parentHandle)
+        public TpmHandle LoadExternal(KeyWrapper parent, KeyWrapper external)
         {
-            TpmPublic childKeyPublic = GetChildKeyPublic();
-            TpmHandle childKeyHandle = _tbsTpm.LoadExternal(
-                new Sensitive(_authVal, new byte[0], new Tpm2bSymKey(childKeyPrivateBytes)),
-                childKeyPublic,
-                parentHandle
-            );
+            AuthValue auth = new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
+            return _tbsTpm.LoadExternal(
+                new Sensitive(auth, null, new Tpm2bSymKey(external.KeyPriv)),
+                external.KeyPub, parent.Handle);
 
-            return new KeyWrapper(
-                childKeyHandle,
-                childKeyPublic,
-                new TpmPrivate(childKeyPrivateBytes)
-            );
         }
 
         public KeyWrapper LoadObject(TpmHandle parentHandle, TpmPrivate objPrivate, TpmPublic objPublic,
