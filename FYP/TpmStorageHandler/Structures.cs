@@ -27,13 +27,32 @@ namespace TpmStorageHandler
                 _private = privateArea;
                 _public = publicArea;
 
-                KeyPriv = Marshaller.FromTpmRepresentation<TpmPrivate>(_private);
-                KeyPub = Marshaller.FromTpmRepresentation<TpmPublic>(_public);
+                KeyPriv = Marshaller.FromTpmRepresentation<TpmPrivate>(privateArea);
+                KeyPub = Marshaller.FromTpmRepresentation<TpmPublic>(publicArea);
             }
 
-            public KeyWrapper(TpmHandle handle, TpmPublic keyPublic, TpmPrivate keyPrivate = null)
+            public KeyWrapper(TpmPublic keyPublic)
             {
-                this.Handle = handle;
+                if (keyPublic != null && keyPublic.unique != null)
+                {
+                    this.KeyPub = keyPublic;
+                    this._public = keyPublic.GetTpmRepresentation();
+                }
+                else throw new ArgumentNullException(nameof(keyPublic), "Invalid public area of the key supplied");
+            }
+
+            public KeyWrapper(TpmHandle keyHandle, TpmPublic keyPublic)
+            {
+                this.Handle = keyHandle;
+                this.KeyPub = keyPublic;
+                if (keyPublic != null && keyPublic.unique != null)
+                {
+                    this._public = keyPublic?.GetTpmRepresentation();
+                }
+            }
+
+            public KeyWrapper(TpmPublic keyPublic, TpmPrivate keyPrivate)
+            {
                 this.KeyPub = keyPublic;
                 this.KeyPriv = keyPrivate;
 
@@ -47,21 +66,40 @@ namespace TpmStorageHandler
                     this._private = keyPrivate?.GetTpmRepresentation();
                 }
             }
+
+            public KeyWrapper(TpmHandle handle, TpmPublic keyPublic, TpmPrivate keyPrivate) 
+                : this(keyPublic, keyPrivate)
+            {
+                this.Handle = handle;
+            }
         }
         
-        public struct KeyDuplicate
+        [JsonObject(MemberSerialization.OptIn)]
+        public class KeyDuplicate : KeyWrapper
         {
+            [JsonProperty]
             public byte[] EncKey { get; private set; }
+            
+            [JsonProperty]
             public byte[] Seed { get; private set; }
-            public TpmPrivate Private { get; private set; }
-            public TpmPublic Public { get; private set; }
 
-            public KeyDuplicate(byte[] encKey, byte[] seed, TpmPrivate tpmPrivate, TpmPublic tpmPublic)
+            [JsonConstructor]
+            public KeyDuplicate(byte[] publicArea, byte[] privateArea) : base(publicArea, privateArea)
             {
-                this.EncKey = encKey;
-                this.Seed = seed;
-                this.Private = tpmPrivate;
-                this.Public = tpmPublic;
+            }
+
+            public KeyDuplicate(byte[] dupePublic, byte[] dupePrivate, byte[] encryptionKey, byte[] encryptionSeed)
+                : base(dupePublic, dupePrivate)
+            {
+                EncKey = encryptionKey;
+                Seed = encryptionSeed;
+            }
+
+            public KeyDuplicate(TpmPublic dupePublic, TpmPrivate dupePrivate, byte[] encryptionKey, byte[] encyrptionSeed)
+                : base(dupePublic, dupePrivate)
+            {
+                this.EncKey = encryptionKey;
+                this.Seed = encyrptionSeed;
             }
         }
 

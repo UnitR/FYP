@@ -261,26 +261,38 @@ ObjectAttr.Decrypt                                                          // S
         {
             if (symDef == null)
             {
-                symDef = SymDefObject.NullObject();
+                if (childKey.KeyPub.objectAttributes.HasFlag(ObjectAttr.EncryptedDuplication))
+                {
+                    // If encryption is required for the child key, default to AES128 in CFB mode
+                    symDef = GetmAesSymObj();
+                }
+                else symDef = SymDefObject.NullObject();
             }
             byte[] encKeyOut =
                 _tbsTpm[policySession.AuthSession]
                     .Duplicate(childKey.Handle, newParent.Handle, null, symDef,
                         out var duplicate, out var seed);
 
-            return new KeyDuplicate(encKeyOut, seed, duplicate, childKey.KeyPub);
+            return new KeyDuplicate(childKey.KeyPub, duplicate, encKeyOut, seed);
         }
 
         public KeyWrapper ImportKey(KeyWrapper parent, KeyDuplicate dupe, SymDefObject symDef = null)
         {
             // Params for import - depending on the symmetric algorithm provided
-            byte[] encKey = symDef == null ? new byte[0] : dupe.EncKey;
-            byte[] inSymSeed = symDef == null ? new byte[0] : dupe.Seed;
+            byte[] encKey = new byte[0];
+            byte[] inSymSeed = new byte[0];
 
             // Avoid null values - leads to an error return code
             if (symDef == null)
             {
-                symDef = SymDefObject.NullObject();
+                if ((dupe.Seed != null && dupe.Seed.Length > 0) 
+                    && (dupe.EncKey != null && dupe.EncKey.Length > 0))
+                {
+                    symDef = GetmAesSymObj();
+                    encKey = dupe.EncKey;
+                    inSymSeed = dupe.Seed;
+                }
+                else symDef = SymDefObject.NullObject();
             }
 
             AuthValue authValue = new AuthValue(SENS_PRIM_KEY_AUTH_VAL);
@@ -290,13 +302,13 @@ ObjectAttr.Decrypt                                                          // S
                     .Import(
                         parent.Handle,
                         encKey,
-                        dupe.Public,
-                        dupe.Private,
+                        dupe.KeyPub,
+                        dupe.KeyPriv,
                         inSymSeed,
                         symDef);
 
             // Load the imported key
-            return LoadObject(parent.Handle, dupePrivate, dupe.Public, authValue);
+            return LoadObject(parent.Handle, dupePrivate, dupe.KeyPub, authValue);
         }
 
         //public KeyWrapper LoadChildKeyExternal(byte[] childKeyPrivateBytes, KeyWrapper parentKey)

@@ -22,9 +22,6 @@ namespace TpmTest
 
         private const string TEST_MESSAGE = "ABCD";
 
-        private static KeyWrapper GeneratePrimaryKey(Tpm2Wrapper tpm)
-            => tpm.GetPrimaryStorageKey();
-
         private static KeyWrapper GenerateChildKey(TpmHandle primHandle, Tpm2Wrapper tpm, byte[] authSession = null)
             => tpm.CreateStorageParentKey(primHandle, authSession);
 
@@ -45,23 +42,10 @@ namespace TpmTest
             return FileIO.ReadTextAsync(file).GetAwaiter().GetResult();
         }
 
-        private static FileEncryptionData LoadEncryptionDataFromFile(string fileName = _dupekeyFileName)
+        private static FileEncryptionData LoadEncryptionDataFromFile(string fileName)
         {
             string fedJson = LoadFile(fileName);
             return JsonConvert.DeserializeObject<FileEncryptionData>(fedJson);
-        }
-
-        private static KeyWrapper ImportKey(Tpm2Wrapper tpm, FileEncryptionData fed, KeyWrapper primKey)
-        {
-            KeyDuplicate keyDupe = new KeyDuplicate(
-                fed.EncryptionKey,
-                fed.EncryptionSeed,
-                Marshaller.FromTpmRepresentation<TpmPrivate>(fed.KeyPrivate),
-                Marshaller.FromTpmRepresentation<TpmPublic>(fed.KeyPublic));
-            KeyWrapper childKey = tpm.ImportKey(
-                primKey, keyDupe,
-                new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb));
-            return childKey;
         }
 
         private static KeyWrapper LoadStorageParent(Tpm2Wrapper tpm, KeyWrapper primKey)
@@ -129,7 +113,7 @@ namespace TpmTest
         public void TestChildKeyCreation()
         {
             Tpm2Wrapper tpm = new Tpm2Wrapper();
-            KeyWrapper primKey = GeneratePrimaryKey(tpm);
+            KeyWrapper primKey = tpm.GetPrimaryStorageKey();
             KeyWrapper childKey = tpm.CreateStorageParentKey(primKey.Handle);
 
             Assert.IsNotNull(childKey.KeyPub);
@@ -141,7 +125,7 @@ namespace TpmTest
         public void TestEncrypt()
         {
             Tpm2Wrapper tpm = new Tpm2Wrapper();
-            KeyWrapper primKey = GeneratePrimaryKey(tpm);
+            KeyWrapper primKey = tpm.GetPrimaryStorageKey();
             KeyWrapper childKey = GenerateChildKey(primKey.Handle, tpm);
 
             string expected = "abcd";
@@ -156,7 +140,7 @@ namespace TpmTest
         public void TestEncryptDecryptMessage()
         {
             Tpm2Wrapper tpm = new Tpm2Wrapper();
-            KeyWrapper primKey = GeneratePrimaryKey(tpm);
+            KeyWrapper primKey = tpm.GetPrimaryStorageKey();
             KeyWrapper childKey = GenerateChildKey(primKey.Handle, tpm);
 
             string expected = "abcd";
@@ -174,7 +158,7 @@ namespace TpmTest
         public void TestDuplicateSave()
         {
             Tpm2Wrapper tpm = new Tpm2Wrapper();
-            KeyWrapper primKey = GeneratePrimaryKey(tpm);
+            KeyWrapper primKey = tpm.GetPrimaryStorageKey(true);
 
             // Need to ensure we have a session for verifying the key creation
             PolicySession dupeSession = tpm.StartDuplicatePolicySession();
@@ -185,37 +169,15 @@ namespace TpmTest
 
             // Private child key. Use the same session the key was created under.
             KeyDuplicate storageParentDuplicate = tpm.DuplicateChildKey(
-                storageParentKey, primKey, dupeSession,
-                new SymDefObject(TpmAlgId.Aes, 128, TpmAlgId.Cfb));
+                storageParentKey, primKey, dupeSession);
 
             // No longer need the duplicate session
             tpm.FlushContext(dupeSession.AuthSession);
 
-            //// Start an encrypt/decrypt session
-            //PolicySession encDecSession = tpm.StartEncryptDecryptPolicySession();
-
-            //// Also encrypt a test message
-            //byte[] encMessage = tpm.Encrypt(
-            //    Encoding.UTF8.GetBytes(TEST_MESSAGE),
-            //    childKey, 
-            //    null,
-            //    out byte[] encryptionIv);
-
-            //// Flush the encrypt session
-            //tpm.FlushContext(encDecSession.AuthSession);
-
-            // Store this in an object
-            byte[] childPublic = storageParentDuplicate.Public.GetTpmRepresentation();
-            byte[] childPrivate = storageParentDuplicate.Private.GetTpmRepresentation();
-
-            // Create a data structure containing all necessary data
-            FileEncryptionData fed = new FileEncryptionData(
-                null, childPrivate, childPublic, dupeSession.PolicyHash,
-                storageParentDuplicate.EncKey, storageParentDuplicate.Seed, null);
-            string fedJson = JsonConvert.SerializeObject(fed);
-
             // Save data on disk
-            SaveFile(_dupekeyFileName, fedJson, out StorageFile _);
+            SaveFile(
+                _dupekeyFileName, JsonConvert.SerializeObject(storageParentDuplicate),
+                out StorageFile _);
 
             CleanUp(tpm, new TpmHandle[] {storageParentKey.Handle});
         }
@@ -224,57 +186,19 @@ namespace TpmTest
         public void TestImportDuplicate()
         {
             Tpm2Wrapper tpm = new Tpm2Wrapper();
-            KeyWrapper primKey = GeneratePrimaryKey(tpm);
+            KeyWrapper primKey = tpm.GetPrimaryStorageKey();
 
-            FileEncryptionData fed = LoadEncryptionDataFromFile();
+            string dupeJson = LoadFile(_dupekeyFileName);
+            Assert.IsNotNull(dupeJson);
+            KeyDuplicate keyDupe = JsonConvert.DeserializeObject<KeyDuplicate>(dupeJson);
+            Assert.IsNotNull(keyDupe);
+            Assert.IsNotNull(keyDupe.KeyPriv);
+            Assert.IsNotNull(keyDupe.KeyPub);
 
-            // File should not be empty
-            Assert.IsNotNull(fed);
+            KeyWrapper importedDupe = tpm.ImportKey(primKey, keyDupe);
+            Assert.IsNotNull(importedDupe.Handle);
 
-            var childKey = ImportKey(tpm, fed, primKey);
-
-            // Test to see if the key was loaded
-            Assert.IsNotNull(childKey.Handle);
-
-            //// Try decrypting the previously encrypted test message
-            //PolicySession encDecSession = tpm.StartEncryptDecryptPolicySession();
-            //byte[] decMessage = tpm.Decrypt(
-            //    fed.FileData,
-            //    childKey,
-            //    null,
-            //    fed.EncryptionIv);
-
-            //// Flush the decrypt session
-            //tpm.FlushContext(encDecSession.AuthSession);
-
-            //// And then check equality
-            //Assert.IsNotNull(decMessage);
-            //Assert.AreEqual(TEST_MESSAGE, Encoding.UTF8.GetString(decMessage));
-
-            CleanUp(tpm, new TpmHandle[] {childKey.Handle});
-        }
-
-        [TestMethod]
-        public void TestEncryptChildKeyPrivate()
-        {
-            Tpm2Wrapper tpm = new Tpm2Wrapper();
-            KeyWrapper primKey = GeneratePrimaryKey(tpm);
-            KeyWrapper childKey = GenerateChildKey(primKey.Handle, tpm);
-
-            // Encrypt a message to decrypt later
-            byte[] encMessage = tpm.Encrypt(
-                Encoding.UTF8.GetBytes(TEST_MESSAGE), childKey, out byte[] encIv);
-
-            // Encrypt child key using the primary key
-            byte[] childKeyEncrypted = tpm.RsaEncrypt(primKey, childKey.KeyPriv);
-
-            // Store this in an object
-            FileEncryptionData fed = new FileEncryptionData(encMessage, childKeyEncrypted, null, null, encIv);
-            string fedJson = JsonConvert.SerializeObject(fed);
-
-            //SaveFile(fedJson, out var file);
-
-            CleanUp(tpm, new TpmHandle[] {primKey.Handle, childKey.Handle});
+            CleanUp(tpm, new TpmHandle[] {importedDupe.Handle});
         }
 
         [TestMethod]
@@ -404,12 +328,7 @@ namespace TpmTest
                 }
             }
 
-            FileEncryptionData fed = new FileEncryptionData(
-                encrypted,
-                sealedObj.KeyPriv,
-                sealedObj.KeyPub,
-                null, null, null,
-                aes.IV);
+            FileEncryptionData fed = new FileEncryptionData(encrypted, sealedObj, aes.IV);
             const string fileName = "encryptedFileTest.enc";
             SaveFile(fileName, JsonConvert.SerializeObject(fed), out StorageFile _);
             fed = null;
@@ -450,7 +369,6 @@ namespace TpmTest
             aes2.Dispose();
 
             CleanUp(tpm, new TpmHandle[] {storageParent.Handle, sealedObj.Handle});
-
         }
     }
 }

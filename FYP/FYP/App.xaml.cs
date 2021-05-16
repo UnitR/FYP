@@ -76,8 +76,8 @@ namespace FYP
                 Window.Current.Activate();
             }
 
-            // Connect TPM
-            UserTpm = StorageHandler.ConnectTpm();
+            //// Connect TPM
+            //UserTpm = StorageHandler.ConnectTpm();
         }
 
         /// <summary>
@@ -101,8 +101,8 @@ namespace FYP
         {
             var deferral = e.SuspendingOperation.GetDeferral();
 
-            //TODO: Save application state and stop any background activity
-            StorageHandler.ShutdownTpm(UserTpm);
+            ////TODO: Save application state and stop any background activity
+            //StorageHandler.ShutdownTpm(UserTpm);
 
             deferral.Complete();
         }
