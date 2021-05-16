@@ -1,20 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
-using Windows.UI.Xaml.Input;
-using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
-using TpmStorageHandler;
+using FYP.Data;
 
 namespace FYP
 {
@@ -23,8 +14,6 @@ namespace FYP
     /// </summary>
     sealed partial class App : Application
     {
-
-        public Tpm2Lib.Tpm2 UserTpm { get; private set; }
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -75,9 +64,6 @@ namespace FYP
                 // Ensure the current window is active
                 Window.Current.Activate();
             }
-
-            //// Connect TPM
-            //UserTpm = StorageHandler.ConnectTpm();
         }
 
         /// <summary>
@@ -101,9 +87,7 @@ namespace FYP
         {
             var deferral = e.SuspendingOperation.GetDeferral();
 
-            ////TODO: Save application state and stop any background activity
-            //StorageHandler.ShutdownTpm(UserTpm);
-
+            //TODO: Save application state and stop any background activity
             deferral.Complete();
         }
     }

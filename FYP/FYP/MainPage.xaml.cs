@@ -1,19 +1,13 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
-using Windows.UI.Xaml.Input;
-using Windows.UI.Xaml.Media;
-using Windows.UI.Xaml.Navigation;
 using Windows.Storage;
+using FYP.Controls;
+using FYP.Data;
+using Newtonsoft.Json;
+using TpmStorageHandler.Structures;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -24,17 +18,39 @@ namespace FYP
     /// </summary>
     public sealed partial class MainPage : Page
     {
+        private readonly StorageHandler _storageHandler;
 
+        private StorageHandler.FileAction _currAction;
         IStorageFile _currActiveFile = null;
 
         public MainPage()
         {
             this.InitializeComponent();
+            this.Unloaded += (sender, args) =>
+            {
+                _storageHandler.Dispose();
+            };
+
+            _storageHandler = new StorageHandler();
+            _storageHandler.Initialise();
         }
 
         private void BtnSecureFile_Click(object sender, RoutedEventArgs e)
         {
-            HubMain.ScrollToSection(HubMain.Sections[1]);
+            _currAction = StorageHandler.FileAction.Encrypt;
+            BtnFilePick.Visibility = Visibility.Visible;
+            ProtectedFileList.Visibility = Visibility.Collapsed;
+            MainScroller.ScrollToElement(
+                element: FileSelectGrid, 
+                isVerticalScrolling: false);
+        }
+
+        private void BtnViewFile_Click(object sender, RoutedEventArgs e)
+        {
+            _currAction = StorageHandler.FileAction.Decrypt;
+            MainScroller.ScrollToElement(
+                element: FileSelectGrid,
+                isVerticalScrolling: false);
         }
 
         private async void BtnFilePick_Click(object sender, RoutedEventArgs e)
@@ -48,10 +64,75 @@ namespace FYP
             // Cache file in memory
             _currActiveFile = await picker.PickSingleFileAsync();
 
+            // Display file information
+            LblFilePath.Text = _currActiveFile.Path;
+            LblFileName.Text = _currActiveFile.Name;
+
             // Scroll view to next step
-            HubMain.ScrollToSection(HubMain.Sections[2]);
+            MainScroller.ScrollToElement(
+                element: ConfirmPanel,
+                isVerticalScrolling: false);
         }
 
+        private async void BtnConfirm_OnClick(object sender, RoutedEventArgs e)
+        {
+            switch (_currAction)
+            {
+                case StorageHandler.FileAction.Encrypt:
+                    await EncryptFileAsync();
+                    break;
+                case StorageHandler.FileAction.Decrypt:
+                {
+                    IStorageFile file = await DecryptFileAsync();
+                    await Windows.System.Launcher.LaunchFileAsync(file);
+                    break;
+                }
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
 
+        private async Task<bool> EncryptFileAsync()
+        {
+            var fileStream = await _currActiveFile.OpenStreamForReadAsync();
+            var fileBytes = new byte[(int)fileStream.Length];
+            await fileStream.ReadAsync(fileBytes, 0, (int)fileStream.Length);
+
+            try
+            {
+                // Encrypt stream
+                FileEncryptionData fed = _storageHandler.EncryptFile(fileBytes);
+                // Save to disk
+                await _storageHandler.SaveObjectToJsonAsync("testRun.enc", fed);
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private async Task<IStorageFile> DecryptFileAsync()
+        {
+            const string fileName = "testRun.enc";
+            const string fileExt = "pdf";
+
+            string fedJson = await _storageHandler.LoadFileAsync(fileName);
+            if (String.IsNullOrWhiteSpace(fedJson))
+            {
+                throw new ArgumentNullException(nameof(fileName), "Cannot open non-existent file.");
+            }
+
+            FileEncryptionData fed = JsonConvert.DeserializeObject<FileEncryptionData>(fedJson);
+
+            // Get the decrypted file
+            byte[] fileBytes = await _storageHandler.DecryptFileAsync(fed);
+            
+            // Save the file temporarily
+            
+            return await _storageHandler.SaveFileBytesTempAsync(
+                new FileData(fileName, fileExt, fileBytes));
+        }
     }
 }

@@ -10,7 +10,6 @@ namespace TpmStorageHandler
         [JsonObject(MemberSerialization.OptOut)]
         public class FileEncryptionData
         {
-
             /// <summary>
             /// Encrypted file data
             /// </summary>

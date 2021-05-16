@@ -27,10 +27,10 @@ namespace TpmTest
 
         private static void SaveFile(string fileName, string fileData, out StorageFile file)
         {
-            Windows.Storage.StorageFolder storageFolder = Windows.Storage.ApplicationData.Current.LocalFolder;
+            StorageFolder storageFolder = ApplicationData.Current.LocalFolder;
             file = storageFolder.CreateFileAsync(
                 fileName,
-                Windows.Storage.CreationCollisionOption.ReplaceExisting).GetAwaiter().GetResult();
+                CreationCollisionOption.ReplaceExisting).GetAwaiter().GetResult();
             FileIO.WriteTextAsync(file, fileData).GetAwaiter().GetResult();
         }
 
@@ -331,10 +331,27 @@ namespace TpmTest
             FileEncryptionData fed = new FileEncryptionData(encrypted, sealedObj, aes.IV);
             const string fileName = "encryptedFileTest.enc";
             SaveFile(fileName, JsonConvert.SerializeObject(fed), out StorageFile _);
+
+            unsealedKey = null;
             fed = null;
             aes.Dispose();
+            
+            tpm.FlushContext(storageParent.Handle);
+            tpm.FlushContext(sealedObj.Handle);
+            tpm.FlushContext(policySession.AuthSession);
 
+            // Load file data
             fed = LoadEncryptionDataFromFile(fileName);
+
+            // Load storage parent
+            storageParent = LoadStorageParent(tpm, primKey);
+
+            // Load sealed object
+            sealedObj = LoadSealedObject(tpm, storageParent, out policySession);
+
+            // Unseal
+            unsealedKey = tpm.UnsealObject(sealedObj, policySession);
+
             AesCng aes2 = new AesCng()
             {
                 KeySize = 128,
@@ -368,7 +385,7 @@ namespace TpmTest
 
             aes2.Dispose();
 
-            CleanUp(tpm, new TpmHandle[] {storageParent.Handle, sealedObj.Handle});
+            CleanUp(tpm, new TpmHandle[] {storageParent.Handle, sealedObj.Handle, policySession.AuthSession});
         }
     }
 }
