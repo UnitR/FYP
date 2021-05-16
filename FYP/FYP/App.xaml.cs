@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
+using Windows.Storage;
+using Windows.Storage.Search;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Navigation;
@@ -87,7 +90,15 @@ namespace FYP
         {
             var deferral = e.SuspendingOperation.GetDeferral();
 
-            //TODO: Save application state and stop any background activity
+            // Clear the TEMP file to prevent leaving unsealed data readable
+            StorageFolder appFolder = ApplicationData.Current.LocalFolder;
+            IReadOnlyList<IStorageFile> files =
+                appFolder.GetFilesAsync(CommonFileQuery.DefaultQuery)
+                    .GetAwaiter().GetResult();
+            IStorageFile tempFile = files.FirstOrDefault(
+                file => file.Name.Contains(StorageHandler.FILE_NAME_TEMP));
+            tempFile?.DeleteAsync(StorageDeleteOption.PermanentDelete).GetAwaiter().GetResult();
+
             deferral.Complete();
         }
     }

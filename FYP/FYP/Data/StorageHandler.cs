@@ -23,10 +23,8 @@ namespace FYP.Data
             Decrypt
         }
 
-        private const string FILE_NAME_STORAGE_PARENT = "storage.enc";
-        private const string FILE_NAME_TEMP = "TEMP";
-
-        private byte[] _encryptionIv;
+        internal const string FILE_NAME_STORAGE_PARENT = "storage.enc";
+        internal const string FILE_NAME_TEMP = "TEMP";
 
         private readonly Tpm2Wrapper _tpm;
         private readonly KeyWrapper _primaryKey;
@@ -152,8 +150,6 @@ namespace FYP.Data
             AesCng aes = GetDefaultAesConfig(unsealedKey);
             aes.GenerateIV();
 
-            _encryptionIv = aes.IV;
-
             // Encryption streams
             ICryptoTransform encryptor = aes.CreateEncryptor(unsealedKey, aes.IV);
             byte[] encrypted;
@@ -191,8 +187,6 @@ namespace FYP.Data
 
             AesCng aes = GetDefaultAesConfig(
                 unsealedKey, encryptedFile.EncryptionIv);
-
-            bool sameIv = _encryptionIv.SequenceEqual(aes.IV);
 
             byte[] result;
             using (var msIn = new MemoryStream(encryptedFile.FileData))
