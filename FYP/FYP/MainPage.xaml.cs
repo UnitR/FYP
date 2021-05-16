@@ -1,13 +1,13 @@
-﻿using System;
-using System.IO;
-using System.Threading.Tasks;
-using Windows.UI.Xaml;
-using Windows.UI.Xaml.Controls;
-using Windows.Storage;
-using FYP.Controls;
+﻿using FYP.Controls;
 using FYP.Data;
 using Newtonsoft.Json;
+using System;
+using System.IO;
+using System.Threading.Tasks;
 using TpmStorageHandler.Structures;
+using Windows.Storage;
+using Windows.UI.Xaml;
+using Windows.UI.Xaml.Controls;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -41,7 +41,7 @@ namespace FYP
             BtnFilePick.Visibility = Visibility.Visible;
             ProtectedFileList.Visibility = Visibility.Collapsed;
             MainScroller.ScrollToElement(
-                element: FileSelectGrid, 
+                element: FileSelectGrid,
                 isVerticalScrolling: false);
         }
 
@@ -60,9 +60,13 @@ namespace FYP
             picker.ViewMode = Windows.Storage.Pickers.PickerViewMode.Thumbnail;
             picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
             picker.FileTypeFilter.Add("*");
-            
+
             // Cache file in memory
             _currActiveFile = await picker.PickSingleFileAsync();
+
+            // The file is null: the user most likely didn't pick one
+            if (_currActiveFile == null)
+                return;
 
             // Display file information
             LblFilePath.Text = _currActiveFile.Path;
@@ -82,11 +86,11 @@ namespace FYP
                     await EncryptFileAsync();
                     break;
                 case StorageHandler.FileAction.Decrypt:
-                {
-                    IStorageFile file = await DecryptFileAsync();
-                    await Windows.System.Launcher.LaunchFileAsync(file);
-                    break;
-                }
+                    {
+                        IStorageFile file = await DecryptFileAsync();
+                        await Windows.System.Launcher.LaunchFileAsync(file);
+                        break;
+                    }
                 default:
                     throw new ArgumentOutOfRangeException();
             }
@@ -128,9 +132,9 @@ namespace FYP
 
             // Get the decrypted file
             byte[] fileBytes = await _storageHandler.DecryptFileAsync(fed);
-            
+
             // Save the file temporarily
-            
+
             return await _storageHandler.SaveFileBytesTempAsync(
                 new FileData(fileName, fileExt, fileBytes));
         }

@@ -1,16 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Globalization;
+﻿using Newtonsoft.Json;
+using System;
 using System.IO;
-using System.Linq;
-using System.Reflection.Metadata.Ecma335;
 using System.Security.Cryptography;
-using System.Text;
 using System.Threading.Tasks;
 using TpmStorageHandler;
 using TpmStorageHandler.Structures;
 using Windows.Storage;
-using Newtonsoft.Json;
 using UnicodeEncoding = Windows.Storage.Streams.UnicodeEncoding;
 
 namespace FYP.Data
@@ -29,10 +24,10 @@ namespace FYP.Data
         private readonly Tpm2Wrapper _tpm;
         private readonly KeyWrapper _primaryKey;
         private KeyWrapper _storageParentKey;
-        
+
         private readonly StorageFolder _rootFolder;
 
-        private bool disposedValue;
+        private bool _disposedValue;
 
         public StorageHandler(bool alsoInitialise = false)
         {
@@ -58,16 +53,16 @@ namespace FYP.Data
                     JsonConvert.DeserializeObject<KeyWrapper>(
                        await LoadFileAsync(FILE_NAME_STORAGE_PARENT));
                 _storageParentKey = _tpm.LoadObject(
-                    _primaryKey.Handle, 
-                    _storageParentKey.KeyPriv, 
-                    _storageParentKey.KeyPub, 
+                    _primaryKey.Handle,
+                    _storageParentKey.KeyPriv,
+                    _storageParentKey.KeyPub,
                     null);
             }
         }
 
         protected virtual void Dispose(bool disposing)
         {
-            if (!disposedValue)
+            if (!_disposedValue)
             {
                 if (disposing)
                 {
@@ -76,7 +71,7 @@ namespace FYP.Data
 
                 // TODO: free unmanaged resources (unmanaged objects) and override finalizer
                 // TODO: set large fields to null
-                disposedValue = true;
+                _disposedValue = true;
             }
         }
 
@@ -100,7 +95,7 @@ namespace FYP.Data
                 KeySize = 128,
                 BlockSize = 128,
                 // TODO: CBC is not the best mode to use. Prefer a mode such as CFB
-                Mode = CipherMode.CBC, 
+                Mode = CipherMode.CBC,
                 Key = key,
                 IV = iv ?? new byte[16]
             };
@@ -115,7 +110,7 @@ namespace FYP.Data
                 JsonConvert.SerializeObject(objectToSave, Formatting.None),
                 UnicodeEncoding.Utf8 /* Always serialize and save to UTF8 for consistency */
             );
-            
+
             return file;
         }
 
@@ -125,7 +120,7 @@ namespace FYP.Data
                 $"{FILE_NAME_TEMP}.{fileData.FileExtension}",
                 CreationCollisionOption.ReplaceExisting);
             await FileIO.WriteBytesAsync(file, fileData.Data);
-            
+
             return file;
         }
 
@@ -180,8 +175,8 @@ namespace FYP.Data
             PolicySession policy = _tpm.StartKeyedHashSession();
             KeyWrapper fileKey = encryptedFile.EncryptionKey;
             fileKey = _tpm.LoadObject(
-                _storageParentKey.Handle, 
-                fileKey.KeyPriv, fileKey.KeyPub, 
+                _storageParentKey.Handle,
+                fileKey.KeyPriv, fileKey.KeyPub,
                 null);
             byte[] unsealedKey = _tpm.UnsealObject(fileKey, policy);
 
