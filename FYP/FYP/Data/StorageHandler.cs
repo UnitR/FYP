@@ -231,7 +231,7 @@ namespace FYP.Data
             return result;
         }
 
-        public async Task<IStorageFile> UpdateMasterListFileAsync(string originalFileName)
+        public async Task<string> UpdateMasterListFileAsync(string originalFileName)
         {
             // Generate a random string
             byte[] randomBytes = _tpm.GetRandom(16);
@@ -249,9 +249,10 @@ namespace FYP.Data
                 isNameValid = true;
             }
 
-            return isNameValid
-                ? await UpdateMasterListFileAsync(originalFileName, randString)
-                : await UpdateMasterListFileAsync(originalFileName); // recursive call to generate another random string
+            if (!isNameValid) await UpdateMasterListFileAsync(originalFileName); // recursive call to generate another random string
+            
+            var masterFile = await UpdateMasterListFileAsync(originalFileName, randString);
+            return randString;
         }
 
         public async Task<IStorageFile> UpdateMasterListFileAsync(string originalFileName, string securedFileName)
