@@ -122,7 +122,6 @@
     <Compile Include="Controls\ControlExtensionMethods.cs" />
     <Compile Include="Data\FileData.cs" />
     <Compile Include="Data\MasterFileList.cs" />
-    <Compile Include="Data\ProtectedFile.cs" />
     <Compile Include="MainPage.xaml.cs">
       <DependentUpon>MainPage.xaml</DependentUpon>
     </Compile>
@@ -135,6 +134,8 @@
     </AppxManifest>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="Assets\lock-open-solid.svg" />
+    <Content Include="Assets\lock-solid.svg" />
     <Content Include="Properties\Default.rd.xml" />
     <Content Include="Assets\LockScreenLogo.scale-200.png" />
     <Content Include="Assets\SplashScreen.scale-200.png" />

@@ -23,7 +23,8 @@ namespace FYP
         private readonly StorageHandler _storageHandler;
 
         private StorageHandler.FileAction _currAction;
-        IStorageFile _currActiveFile = null;
+        private IStorageFile _currActiveFile;
+        private FileNameMapping _currFileMapping;
 
         private ObservableCollection<FileNameMapping> _fileMappings = new ObservableCollection<FileNameMapping>();
 
@@ -41,7 +42,7 @@ namespace FYP
             _storageHandler.Initialise();
 
             FileSelectGrid.Visibility = Visibility.Collapsed;
-            ConfirmPanel.Visibility = Visibility.Collapsed;
+            ConfirmGrid.Visibility = Visibility.Collapsed;
         }
 
         private void BtnSecureFile_Click(object sender, RoutedEventArgs e)
@@ -97,40 +98,61 @@ namespace FYP
             LblFilePath.Text = _currActiveFile.Path;
             LblFileName.Text = _currActiveFile.Name;
 
-            ConfirmPanel.Visibility = Visibility.Visible;
+            ConfirmGrid.Visibility = Visibility.Visible;
 
             // Scroll view to next step
             MainScroller.ScrollToElement(
-                element: ConfirmPanel,
+                element: ConfirmGrid,
                 isVerticalScrolling: false);
         }
 
         private async void BtnConfirm_OnClick(object sender, RoutedEventArgs e)
         {
+            string operation;
             switch (_currAction)
             {
                 case StorageHandler.FileAction.Encrypt:
                 {
-                    await EncryptFileAsync();
                     // Update the master file after each encryption
-                    var file = await _storageHandler.UpdateMasterListFileAsync(_currActiveFile.Name);
+                    string secureFileName = await _storageHandler.UpdateMasterListFileAsync(_currActiveFile.Name);
                     FileMappings.Add(
-                        new FileNameMapping(_currActiveFile.Name,
-                        file.Name));
+                        new FileNameMapping(
+                            _currActiveFile.Name,
+                            secureFileName));
+                    await EncryptFileAsync(secureFileName);
+                    operation = "is now protected";
                     break;
                 }
                 case StorageHandler.FileAction.Decrypt:
                     {
                         IStorageFile file = await DecryptFileAsync();
                         await Windows.System.Launcher.LaunchFileAsync(file);
+                        operation = "should open shortly";
                         break;
                     }
                 default:
                     throw new ArgumentOutOfRangeException();
             }
+
+            ContentDialog dialog = new ContentDialog
+            {
+                Title = "All done!",
+                Content = $"Your file {operation}.",
+                CloseButtonText = "OK"
+            };
+
+            dialog.ShowAsync();
+
+            // Clean up
+            _currActiveFile = null;
+            _currFileMapping = null;
+            LblFileName.Text = String.Empty;
+            LblFilePath.Text = String.Empty;
+            ConfirmGrid.Visibility = Visibility.Collapsed;
+            FileSelectGrid.Visibility = Visibility.Collapsed;
         }
 
-        private async Task<bool> EncryptFileAsync()
+        private async Task<bool> EncryptFileAsync(string fileName)
         {
             var fileStream = await _currActiveFile.OpenStreamForReadAsync();
             var fileBytes = new byte[(int)fileStream.Length];
@@ -141,7 +163,7 @@ namespace FYP
                 // Encrypt stream
                 FileEncryptionData fed = _storageHandler.EncryptFile(fileBytes);
                 // Save to disk
-                await _storageHandler.SaveObjectToJsonAsync("testRun.enc", fed);
+                await _storageHandler.SaveObjectToJsonAsync(fileName, fed);
             }
             catch (Exception ex)
             {
@@ -153,13 +175,12 @@ namespace FYP
 
         private async Task<IStorageFile> DecryptFileAsync()
         {
-            const string fileName = "testRun.enc";
-            const string fileExt = "pdf";
-
-            string fedJson = await _storageHandler.ReadFileAsync(fileName);
+            string fedJson = await _storageHandler.ReadFileAsync(_currFileMapping.SecureName);
             if (String.IsNullOrWhiteSpace(fedJson))
             {
-                throw new ArgumentNullException(nameof(fileName), "Cannot open non-existent file.");
+                throw new ArgumentNullException(
+                    nameof(_currFileMapping.SecureName),
+                    "Cannot open non-existent file.");
             }
 
             FileEncryptionData fed = JsonConvert.DeserializeObject<FileEncryptionData>(fedJson);
@@ -170,19 +191,26 @@ namespace FYP
             // Save the file temporarily
 
             return await _storageHandler.SaveFileBytesTempAsync(
-                new FileData(fileName, fileExt, fileBytes));
+                new FileData(
+                    _currFileMapping.SecureName,
+                    _currFileMapping.FileExt,
+                    fileBytes)
+                );
         }
 
         private async void ProtectedFileList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            FileNameMapping selected = ProtectedFileList.SelectedItem as FileNameMapping;
-            _currActiveFile = await _storageHandler.LoadFileAsync(selected?.SecureName);
+            _currFileMapping = ProtectedFileList.SelectedItem as FileNameMapping;
+            _currActiveFile = await _storageHandler.LoadFileAsync(_currFileMapping.SecureName);
 
-            if (_currActiveFile == null) return; 
+            if (_currActiveFile == null) return;
+
+            LblFileName.Text = _currFileMapping.OriginalName;
+            LblFilePath.Text = "N/A";
                 
-            ConfirmPanel.Visibility = Visibility.Visible;
+            ConfirmGrid.Visibility = Visibility.Visible;
             MainScroller.ScrollToElement(
-                element: ConfirmPanel,
+                element: ConfirmGrid,
                 isVerticalScrolling: false);
         }
     }

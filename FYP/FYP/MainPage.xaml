@@ -10,144 +10,116 @@
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="0*"/>
-            <RowDefinition/>
-        </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <SplitView x:Name="SplitStepGuide" DisplayMode="Inline" IsPaneOpen="True" OpenPaneLength="200"
-                   PaneBackground="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}" Grid.RowSpan="2">
-            <SplitView.Background>
-                <AcrylicBrush TintOpacity="0.2" BackgroundSource="HostBackdrop" TintLuminosityOpacity="0.5"/>
-            </SplitView.Background>
-            <SplitView.Pane>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="1.5*" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <Button Grid.Row="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                        <Button.Background>
-                            <AcrylicBrush TintColor="#CCD1D1D1"/>
-                        </Button.Background>
-                        <Button.Resources>
-                            <RevealBackgroundBrush x:Key="HighlightRevealBorderBrush" Color="Yellow" />
-                        </Button.Resources>
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource ButtonRevealStyle}">
-                                <Setter Property="FocusVisualSecondaryBrush" Value="Yellow" />
-                            </Style>
-                        </Button.Style>
-                        <StackPanel>
-                            <Image Height="150" Width="150" Grid.Column="1" Source="/Assets/Square150x150Logo.scale-200.png" Stretch="Fill" />
-                            <TextBlock Grid.Row="1" Text="1. Choose Mode" FontSize="24" />
-                        </StackPanel>
-                    </Button>
-                    <Border Grid.Row="1" >
-                        <Button Content="Button" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
-                    </Border>
-                    <Border Grid.Row="2" >
-                        <Button Content="Button" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
-                    </Border>
-                </Grid>
-            </SplitView.Pane>
-            <SplitView.Content>
-                <ScrollViewer x:Name="MainScroller" HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Auto">
+        <ScrollViewer x:Name="MainScroller" HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Auto">
+            <Grid>
+                <Grid.Resources>
+                    <Style TargetType="Border">
+                        <Setter Property="BorderThickness" Value="0,0,4,0" />
+                        <Setter Property="BorderBrush" Value="{ThemeResource ContentDialogBorderThemeBrush}" />
+                    </Style>
+                </Grid.Resources>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0">
                     <Grid>
-                        <Grid.Resources>
-                            <Style TargetType="Border">
-                                <Setter Property="BorderThickness" Value="0,0,4,0" />
-                                <Setter Property="BorderBrush" Value="{ThemeResource ContentDialogBorderThemeBrush}" />
-                            </Style>
-                        </Grid.Resources>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="2*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Border Grid.Column="0">
-                            <StackPanel Grid.Column="0" Padding="0,100,0,0" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <Button x:Name="BtnSecureFile" Width="280" Margin="0,0,0,100" Background="#FD1CD100" Click="BtnSecureFile_Click" HorizontalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal" Padding="0,16,0,16" Margin="0,0,0,0">
-                                        <Image Height="64" Width="64" HorizontalAlignment="Left" Margin="0,0,28,0" Source="/Assets/Square150x150Logo.scale-200.png" />
-                                        <TextBlock Text="Protect a file" HorizontalAlignment="Left" FontSize="28" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="BtnViewFile" Width="280" Background="#FFECE221" HorizontalAlignment="Center" Click="BtnViewFile_Click">
-                                    <StackPanel Orientation="Horizontal" Padding="0,16,0,16" Margin="0,0,0,0">
-                                        <Image Height="64" Width="64" Margin="0,0,28,0" Source="/Assets/Square150x150Logo.scale-200.png" />
-                                        <TextBlock Text="View a file" HorizontalAlignment="Left" VerticalAlignment="Center" FontSize="28" />
-                                    </StackPanel>
-                                </Button>
-                            </StackPanel>
-                        </Border>
-                        <Border Grid.Column="1">
-                            <Grid x:Name="FileSelectGrid">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" MinHeight="180" />
-                                    <RowDefinition Height="Auto" MinHeight="40" />
-                                </Grid.RowDefinitions>
-                                <StackPanel Grid.Row="0" Padding="0,100,0,0" HorizontalAlignment="Center" Width="320">
-                                    <Button x:Name="BtnFilePick" Width="320" MinHeight="80" Click="BtnFilePick_Click">
-                                        <TextBlock FontSize="32">
-                                            Open file picker...
-                                        </TextBlock>
-                                    </Button>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="1. Choose mode" FontSize="40" 
+                                           FontWeight="Bold"
+                                           VerticalAlignment="Bottom" 
+                                           Padding="12,20,0,0"/>
+                        <StackPanel Grid.Row="1" Grid.Column="0" Padding="0,100,0,0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Button x:Name="BtnSecureFile" Width="280" Margin="0,0,0,100" Background="#FD1CD100" Click="BtnSecureFile_Click" HorizontalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Padding="0,16,0,16" Margin="0,0,0,0">
+                                    <Image Height="64" Width="64" HorizontalAlignment="Left" Margin="0,0,28,0" Source="/Assets/lock-solid.svg" />
+                                    <TextBlock Text="Protect a file" HorizontalAlignment="Left" FontSize="28" VerticalAlignment="Center" />
                                 </StackPanel>
-                                <StackPanel Grid.Row="1">
-                                    <ListView x:Name="ProtectedFileList"
+                            </Button>
+                            <Button x:Name="BtnViewFile" Width="280" Background="#FFECE221" HorizontalAlignment="Center" Click="BtnViewFile_Click">
+                                <StackPanel Orientation="Horizontal" Padding="0,16,0,16" Margin="0,0,0,0">
+                                    <Image Height="64" Width="64" Margin="0,0,28,0" Source="/Assets/lock-open-solid.svg" />
+                                    <TextBlock Text="View a file" HorizontalAlignment="Left" VerticalAlignment="Center" FontSize="28" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                    </Grid>
+                </Border>
+                <Border Grid.Column="1">
+                    <Grid x:Name="FileSelectGrid">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="100" />
+                            <RowDefinition Height="Auto" MinHeight="600" />
+                            <!--<RowDefinition Height="Auto" MinHeight="40" />-->
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="2. Choose file" FontSize="40" 
+                                           FontWeight="Bold"
+                                           VerticalAlignment="Top"
+                                           Padding="12,20,0,0" Height="73"/>
+                        <StackPanel Grid.Row="1" Padding="0,100,0,0" HorizontalAlignment="Center" Width="720">
+                            <Button x:Name="BtnFilePick" Width="320" MinHeight="80" Click="BtnFilePick_Click"
+                                            HorizontalAlignment="Center">
+                                <TextBlock FontSize="32">
+                                            Open file chooser...
+                                </TextBlock>
+                            </Button>
+                            <ListView x:Name="ProtectedFileList"
                                               SelectionMode="Single"
                                               BorderThickness="1"
                                               BorderBrush="{ThemeResource SystemControlForegroundBaseMediumLowBrush}"
-                                              Width="Auto"
+                                              Width="720"
                                               Height="400"
-                                              HorizontalAlignment="Left"
+                                              HorizontalAlignment="Center"
                                               ItemsSource="{x:Bind FileMappings}" SelectionChanged="ProtectedFileList_SelectionChanged">
-                                        <ListView.ItemTemplate>
-                                            <DataTemplate x:DataType="data:FileNameMapping">
-                                                <TextBlock Text="{Binding OriginalName}" />
-                                            </DataTemplate>
-                                        </ListView.ItemTemplate>
-                                    </ListView>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                        <StackPanel Grid.Column="2" HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="ConfirmPanel">
-                            <Border Height="Auto" MinWidth="400" BorderThickness="1,1,1,1" Background="White">
-                                <StackPanel>
-                                    <StackPanel.Resources>
-                                        <Style TargetType="StackPanel">
-                                            <Setter Property="Padding" Value="0,0,0,0" />
-                                        </Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="FontSize" Value="36" />
-                                        </Style>
-                                    </StackPanel.Resources>
-                                    <TextBlock Margin="0,30,0,0">
-                                            File Path:
-                                    </TextBlock>
-                                    <TextBlock x:Name="LblFilePath" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"></TextBlock>
-                                    <TextBlock Margin="0,30,0,0">
-                                            File Name:
-                                    </TextBlock>
-                                    <TextBlock x:Name="LblFileName"></TextBlock>
-                                </StackPanel>
-                            </Border>
-                            <Button x:Name="BtnConfirm" MinHeight="80" Width="240" HorizontalAlignment="Center" Background="#FF3AFF00" Click="BtnConfirm_OnClick">
-                                <TextBlock FontSize="28" VerticalAlignment="Center">
-                                    GO!
-                                </TextBlock>
-                            </Button>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="data:FileNameMapping">
+                                        <TextBlock Text="{Binding OriginalName}" />
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
                         </StackPanel>
                     </Grid>
-                </ScrollViewer>
-            </SplitView.Content>
-        </SplitView>
+                </Border>
+                <Grid Grid.Column="2" x:Name="ConfirmGrid">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="3. Confirm" FontSize="40" FontWeight="Bold"
+                                       Padding="12,20,0,0"/>
+                    <StackPanel Grid.Row="1" Background="White" Padding="20,0,0,0">
+                        <StackPanel.Resources>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Padding" Value="0,0,0,0" />
+                            </Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontSize" Value="36" />
+                            </Style>
+                        </StackPanel.Resources>
+                        <TextBlock Margin="0,30,0,0">
+                                    File Path:
+                        </TextBlock>
+                        <TextBlock x:Name="LblFilePath" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"></TextBlock>
+                        <TextBlock Margin="0,30,0,0">
+                                    File Name:
+                        </TextBlock>
+                        <TextBlock x:Name="LblFileName"></TextBlock>
+                    </StackPanel>
+                    <Button Grid.Row="2" x:Name="BtnConfirm" MinHeight="80" Width="240" 
+                            HorizontalAlignment="Center" Background="#FF3AFF00" Click="BtnConfirm_OnClick"
+                            Margin="0,20,0,0">
+                        <TextBlock FontSize="28" VerticalAlignment="Center">
+                            Go!
+                        </TextBlock>
+                    </Button>
+                </Grid>
+            </Grid>
+        </ScrollViewer>
     </Grid>
 </Page>
