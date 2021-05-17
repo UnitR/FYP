@@ -1,0 +1,50 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1" MembersFormat="FullSignature">
+  <Class Name="TpmStorageHandler.Structures.FileEncryptionData">
+    <Position X="8.5" Y="2.5" Width="5.25" />
+    <TypeIdentifier>
+      <HashCode>AgAQAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAA=</HashCode>
+      <FileName>FileEncryptionData.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="TpmStorageHandler.Structures.KeyWrapper">
+    <Position X="1.25" Y="0.5" Width="5" />
+    <TypeIdentifier>
+      <HashCode>BAAAAQAAAAAAAAAAgAAAAAAAAAAAAAIAAAAACAAAAAA=</HashCode>
+      <FileName>Structures.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="TpmStorageHandler.Structures.KeyDuplicate">
+    <Position X="0.5" Y="4.5" Width="6.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAEACAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Structures.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="TpmStorageHandler.Tpm2Wrapper" BaseTypeListCollapsed="true">
+    <Position X="14.5" Y="0.5" Width="8.5" />
+    <Compartments>
+      <Compartment Name="Nested Types" Collapsed="false" />
+    </Compartments>
+    <NestedTypes>
+      <Enum Name="TpmStorageHandler.Tpm2Wrapper.TpmType">
+        <TypeIdentifier>
+          <NewMemberFileName>Tpm2Wrapper.cs</NewMemberFileName>
+        </TypeIdentifier>
+      </Enum>
+    </NestedTypes>
+    <TypeIdentifier>
+      <HashCode>CREAJACCACDEBAAQgAEAABCCAAAQQAhBAEAKAgACEAA=</HashCode>
+      <FileName>Tpm2Wrapper.cs</FileName>
+    </TypeIdentifier>
+    <Lollipop Position="0.419" />
+  </Class>
+  <Struct Name="TpmStorageHandler.Structures.PolicySession">
+    <Position X="8.25" Y="5.5" Width="4.25" />
+    <TypeIdentifier>
+      <HashCode>AAAABAAAAAAAAAAAAAAAAAAAABAAEAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Structures.cs</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>
