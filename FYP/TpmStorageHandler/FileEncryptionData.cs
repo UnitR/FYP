@@ -23,6 +23,9 @@ namespace TpmStorageHandler
             [JsonProperty(propertyName: "key")]
             public KeyWrapper EncryptionKey { get; private set; }
 
+            [JsonProperty(propertyName: "signKey")]
+            public KeyWrapper SigningKey { get; private set; }
+
             /// <summary>
             /// Encryption IV used for encrypting the <code>EncryptionKey</code>.
             /// </summary>

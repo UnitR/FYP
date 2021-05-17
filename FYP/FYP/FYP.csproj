@@ -121,6 +121,7 @@
     </Compile>
     <Compile Include="Controls\ControlExtensionMethods.cs" />
     <Compile Include="Data\FileData.cs" />
+    <Compile Include="Data\MasterFileList.cs" />
     <Compile Include="Data\ProtectedFile.cs" />
     <Compile Include="MainPage.xaml.cs">
       <DependentUpon>MainPage.xaml</DependentUpon>

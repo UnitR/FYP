@@ -369,7 +369,7 @@ ObjectAttr.Decrypt                                                          // S
         public byte[] RsaDecrypt(KeyWrapper key, byte[] encMessage)
             => _tbsTpm.RsaDecrypt(key.Handle, encMessage, new SchemeOaep(TpmAlgId.Sha1), null);
 
-        public KeyWrapper CreateSensitiveDataObject(KeyWrapper storageParent, PolicySession policy, TpmPublic template = null, byte[] objectData = null)
+        public KeyWrapper CreateSensitiveDataObject(KeyWrapper parent, PolicySession policy, TpmPublic template = null, byte[] objectData = null)
         {
             if (template != null)
             {
@@ -391,7 +391,7 @@ ObjectAttr.Decrypt                                                          // S
 
             // Determine object attributes based on parent
             ObjectAttr attr = ObjectAttr.UserWithAuth;
-            if (storageParent.KeyPub.objectAttributes.HasFlag(ObjectAttr.EncryptedDuplication))
+            if (parent.KeyPub.objectAttributes.HasFlag(ObjectAttr.EncryptedDuplication))
             {
                 // Encrypted duplication is required to be set if the parent has the same attribute
                 attr |= ObjectAttr.EncryptedDuplication;
@@ -427,7 +427,7 @@ ObjectAttr.Decrypt                                                          // S
                       new KeyedhashParms(),
                       new Tpm2bDigestKeyedhash());
             TpmPrivate objPriv = _tbsTpm[authValue].Create(
-                storageParent.Handle,
+                parent.Handle,
                 new SensitiveCreate(
                     SENS_KEY_AUTH_VAL, 
                     objectData
@@ -440,7 +440,7 @@ ObjectAttr.Decrypt                                                          // S
                 out byte[] ckCreationHash,
                 out TkCreation ckCreationTicket);
 
-            return LoadObject(storageParent.Handle, objPriv, objPub, authValue);
+            return LoadObject(parent.Handle, objPriv, objPub, authValue);
         }
 
         public byte[] UnsealObject(KeyWrapper sealedObj, PolicySession session) => _tbsTpm[session.AuthSession].Unseal(sealedObj.Handle);

@@ -2,6 +2,7 @@
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using TpmStorageHandler;
 using TpmStorageHandler.Structures;
@@ -18,7 +19,10 @@ namespace FYP.Data
             Decrypt
         }
 
-        internal const string FILE_NAME_STORAGE_PARENT = "storage.enc";
+        public MasterFileList FileList { get; private set; }
+
+        internal const string FILE_NAME_STORAGE_PARENT = "storage_parent";
+        internal const string FILE_NAME_MASTER_LIST = "master";
         internal const string FILE_NAME_TEMP = "TEMP";
 
         private readonly Tpm2Wrapper _tpm;
@@ -26,6 +30,7 @@ namespace FYP.Data
         private KeyWrapper _storageParentKey;
 
         private readonly StorageFolder _rootFolder;
+        private IStorageFile _masterListFile;
 
         private bool _disposedValue;
 
@@ -39,24 +44,38 @@ namespace FYP.Data
             if (alsoInitialise) this.Initialise();
         }
 
-        public async void Initialise()
+        public async Task Initialise()
         {
             IStorageFile storageParentFile = await _rootFolder.TryGetItemAsync(FILE_NAME_STORAGE_PARENT) as IStorageFile;
             if (storageParentFile == null)
             {
                 _storageParentKey = _tpm.CreateStorageParentKey(_primaryKey.Handle);
-                storageParentFile = await SaveObjectToJsonAsync(FILE_NAME_STORAGE_PARENT, _storageParentKey);
+                await SaveObjectToJsonAsync(FILE_NAME_STORAGE_PARENT, _storageParentKey);
             }
             else
             {
                 _storageParentKey =
                     JsonConvert.DeserializeObject<KeyWrapper>(
-                       await LoadFileAsync(FILE_NAME_STORAGE_PARENT));
+                       await ReadFileAsync(FILE_NAME_STORAGE_PARENT));
                 _storageParentKey = _tpm.LoadObject(
                     _primaryKey.Handle,
                     _storageParentKey.KeyPriv,
                     _storageParentKey.KeyPub,
                     null);
+            }
+
+            _masterListFile = await _rootFolder.TryGetItemAsync(FILE_NAME_MASTER_LIST) as IStorageFile;
+            if (_masterListFile == null)
+            {
+                _masterListFile =
+                    await _rootFolder.CreateFileAsync(FILE_NAME_MASTER_LIST, CreationCollisionOption.ReplaceExisting);
+            }
+
+            FileList = JsonConvert.DeserializeObject<MasterFileList>(
+                await ReadFileAsync(_masterListFile));
+            if (FileList == null)
+            {
+                FileList = new MasterFileList();
             }
         }
 
@@ -124,13 +143,19 @@ namespace FYP.Data
             return file;
         }
 
-        public async Task<string> LoadFileAsync(string fileName)
+        public async Task<string> ReadFileAsync(string fileName)
         {
             IStorageFile file = await _rootFolder.TryGetItemAsync(fileName) as IStorageFile;
             if (file == null) throw new ArgumentException("File does not exist.", nameof(fileName));
 
             return await FileIO.ReadTextAsync(file, UnicodeEncoding.Utf8);
         }
+
+        public async Task<string> ReadFileAsync(IStorageFile file)
+            => await FileIO.ReadTextAsync(file, UnicodeEncoding.Utf8);
+
+        public async Task<IStorageFile> LoadFileAsync(string fileName) 
+            => await _rootFolder.TryGetItemAsync(fileName) as IStorageFile;
 
         public FileEncryptionData EncryptFile(byte[] fileData)
         {
@@ -204,6 +229,53 @@ namespace FYP.Data
             }
 
             return result;
+        }
+
+        public async Task<IStorageFile> UpdateMasterListFileAsync(string originalFileName)
+        {
+            // Generate a random string
+            byte[] randomBytes = _tpm.GetRandom(16);
+            string randString = Convert.ToBase64String(randomBytes);
+            randString = String.Join("_", randString.Split(Path.GetInvalidFileNameChars()));
+
+            // Test if a file with that name exists
+            bool isNameValid = false;
+            try
+            {
+                IStorageFile file = await _rootFolder.GetFileAsync(randString);
+            }
+            catch (Exception e)
+            {
+                isNameValid = true;
+            }
+
+            return isNameValid
+                ? await UpdateMasterListFileAsync(originalFileName, randString)
+                : await UpdateMasterListFileAsync(originalFileName); // recursive call to generate another random string
+        }
+
+        public async Task<IStorageFile> UpdateMasterListFileAsync(string originalFileName, string securedFileName)
+        {
+            try
+            {
+                AppendToMasterList(originalFileName, securedFileName);
+                return await SaveObjectToJsonAsync(FILE_NAME_MASTER_LIST, FileList);
+            }
+            catch (Exception e)
+            {
+                throw new FileLoadException("Failed to update the master file.", e);
+            }
+        }
+
+        private void AppendToMasterList(string originalFileName, string securedFileName)
+            => FileList.FileMappings.Add(
+                new FileNameMapping(
+                    originalFileName, securedFileName));
+
+        public string ObfuscateString(string stringToHide)
+        {
+            // TODO: This method should create a hash of a provided string
+            throw new NotImplementedException();
         }
     }
 }
