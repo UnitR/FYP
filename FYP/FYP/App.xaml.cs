@@ -95,9 +95,12 @@ namespace FYP
             IReadOnlyList<IStorageFile> files =
                 appFolder.GetFilesAsync(CommonFileQuery.DefaultQuery)
                     .GetAwaiter().GetResult();
-            IStorageFile tempFile = files.FirstOrDefault(
+            IEnumerable<IStorageFile> tempFiles = files.Where(
                 file => file.Name.Contains(StorageHandler.FILE_NAME_TEMP));
-            tempFile?.DeleteAsync(StorageDeleteOption.PermanentDelete).GetAwaiter().GetResult();
+            foreach (IStorageFile file in tempFiles)
+            {
+                file.DeleteAsync(StorageDeleteOption.PermanentDelete).GetAwaiter().GetResult();
+            }
 
             deferral.Complete();
         }
