@@ -110,51 +110,6 @@ namespace TpmTest
         }
 
         [TestMethod]
-        public void TestChildKeyCreation()
-        {
-            Tpm2Wrapper tpm = new Tpm2Wrapper();
-            KeyWrapper primKey = tpm.GetPrimaryStorageKey();
-            KeyWrapper childKey = tpm.CreateStorageParentKey(primKey.Handle);
-
-            Assert.IsNotNull(childKey.KeyPub);
-
-            CleanUp(tpm, new TpmHandle[] {primKey.Handle, childKey.Handle});
-        }
-
-        [TestMethod]
-        public void TestEncrypt()
-        {
-            Tpm2Wrapper tpm = new Tpm2Wrapper();
-            KeyWrapper primKey = tpm.GetPrimaryStorageKey();
-            KeyWrapper childKey = GenerateChildKey(primKey.Handle, tpm);
-
-            string expected = "abcd";
-            byte[] encMessage = tpm.Encrypt(Encoding.UTF8.GetBytes(expected), childKey, out byte[] iv);
-
-            Assert.IsNotNull(encMessage);
-
-            CleanUp(tpm, new TpmHandle[] {primKey.Handle, childKey.Handle});
-        }
-
-        [TestMethod]
-        public void TestEncryptDecryptMessage()
-        {
-            Tpm2Wrapper tpm = new Tpm2Wrapper();
-            KeyWrapper primKey = tpm.GetPrimaryStorageKey();
-            KeyWrapper childKey = GenerateChildKey(primKey.Handle, tpm);
-
-            string expected = "abcd";
-
-            byte[] encMessage = tpm.Encrypt(Encoding.UTF8.GetBytes(expected), childKey, out byte[] iv);
-            byte[] decMessage = tpm.Decrypt(encMessage, childKey, iv);
-            string result = Encoding.UTF8.GetString(decMessage);
-
-            Assert.AreEqual(expected, result);
-
-            CleanUp(tpm, new TpmHandle[] {childKey.Handle});
-        }
-
-        [TestMethod]
         public void TestDuplicateSave()
         {
             Tpm2Wrapper tpm = new Tpm2Wrapper();

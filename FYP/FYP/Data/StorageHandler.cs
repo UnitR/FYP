@@ -13,25 +13,63 @@ namespace FYP.Data
 {
     internal class StorageHandler : IDisposable
     {
+        /// <summary>
+        /// Represents what to do with a given file.
+        /// </summary>
         public enum FileAction
         {
             Encrypt,
             Decrypt
         }
 
+        /// <summary>
+        /// The list of secured files.
+        /// </summary>
         public MasterFileList FileList { get; private set; }
 
+        /// <summary>
+        /// The name of the Storage Parent key file.
+        /// </summary>
         internal const string FILE_NAME_STORAGE_PARENT = "storage_parent";
+
+        /// <summary>
+        /// The name of the Master List file.
+        /// </summary>
         internal const string FILE_NAME_MASTER_LIST = "master";
+
+        /// <summary>
+        /// The name of the temporarily decrypted file.
+        /// </summary>
         internal const string FILE_NAME_TEMP = "TEMP";
 
+        /// <summary>
+        /// A reference to the TPM device.
+        /// </summary>
         private readonly Tpm2Wrapper _tpm;
+
+        /// <summary>
+        /// A reference to the Primary Storage Key. Does not have a private area defined.
+        /// </summary>
         private readonly KeyWrapper _primaryKey;
+
+        /// <summary>
+        /// A reference to the Storage Parent key.
+        /// </summary>
         private KeyWrapper _storageParentKey;
 
+        /// <summary>
+        /// The path to root folder of the application's installed data folder.
+        /// </summary>
         private readonly StorageFolder _rootFolder;
+
+        /// <summary>
+        /// A handle to the master list file.
+        /// </summary>
         private IStorageFile _masterListFile;
 
+        /// <summary>
+        /// Flag to determine whether this instance has been disposed or not
+        /// </summary>
         private bool _disposedValue;
 
         public StorageHandler(bool alsoInitialise = false)
@@ -44,16 +82,26 @@ namespace FYP.Data
             if (alsoInitialise) this.Initialise();
         }
 
+        /// <summary>
+        /// Sets up necessary prerequisites. Obtains the primary key, storage parent, and master file.
+        /// </summary>
+        /// <returns>
+        /// A Task handle. Actual return value is void.
+        /// </returns>
         public async Task Initialise()
         {
+            // Check if the storage parent is generated.
             IStorageFile storageParentFile = await _rootFolder.TryGetItemAsync(FILE_NAME_STORAGE_PARENT) as IStorageFile;
             if (storageParentFile == null)
             {
+                // If not, generate it.
                 _storageParentKey = _tpm.CreateStorageParentKey(_primaryKey.Handle);
                 await SaveObjectToJsonAsync(FILE_NAME_STORAGE_PARENT, _storageParentKey);
             }
             else
             {
+                // If it is, obtain the Public and Private areas of it and load them into the TPM
+                // under the primary key.
                 _storageParentKey =
                     JsonConvert.DeserializeObject<KeyWrapper>(
                        await ReadFileAsync(FILE_NAME_STORAGE_PARENT));
@@ -64,17 +112,21 @@ namespace FYP.Data
                     null);
             }
 
+            // Check if the master file list has been initialised.
             _masterListFile = await _rootFolder.TryGetItemAsync(FILE_NAME_MASTER_LIST) as IStorageFile;
             if (_masterListFile == null)
             {
+                // If not, initialise it.
                 _masterListFile =
                     await _rootFolder.CreateFileAsync(FILE_NAME_MASTER_LIST, CreationCollisionOption.ReplaceExisting);
             }
 
+            // Read the master file list.
             FileList = JsonConvert.DeserializeObject<MasterFileList>(
                 await ReadFileAsync(_masterListFile));
             if (FileList == null)
             {
+                // Make sure it is correctly instantiated.
                 FileList = new MasterFileList();
             }
         }
@@ -108,6 +160,18 @@ namespace FYP.Data
             GC.SuppressFinalize(this);
         }
 
+        /// <summary>
+        /// Obtains the application-default AES configuration.
+        /// </summary>
+        /// <param name="key">
+        /// Key to use for the scheme.
+        /// </param>
+        /// <param name="iv">
+        /// IV to use for the scheme.
+        /// </param>
+        /// <returns>
+        /// An instantiated reference to the AES scheme with key and IV set up correctly.
+        /// </returns>
         private static AesCng GetDefaultAesConfig(byte[] key, byte[] iv = null)
             => new AesCng()
             {
@@ -119,6 +183,18 @@ namespace FYP.Data
                 IV = iv ?? new byte[16]
             };
 
+        /// <summary>
+        /// Serializes the object to JSON and saves the result to a specified file.
+        /// </summary>
+        /// <param name="fileName">
+        /// File name for the new file.
+        /// </param>
+        /// <param name="objectToSave">
+        /// Object to serialize and save.
+        /// </param>
+        /// <returns>
+        /// A handle to the newly created file.
+        /// </returns>
         public async Task<IStorageFile> SaveObjectToJsonAsync(string fileName, object objectToSave)
         {
             IStorageFile file = await _rootFolder.CreateFileAsync(
@@ -133,6 +209,15 @@ namespace FYP.Data
             return file;
         }
 
+        /// <summary>
+        /// Save the provided file data to a file. Saves the file byte[] representation.
+        /// </summary>
+        /// <param name="fileData">
+        /// File data to save
+        /// </param>
+        /// <returns>
+        /// A handle to the newly created file.
+        /// </returns>
         public async Task<IStorageFile> SaveFileBytesTempAsync(FileData fileData)
         {
             IStorageFile file = await _rootFolder.CreateFileAsync(
@@ -143,6 +228,15 @@ namespace FYP.Data
             return file;
         }
 
+        /// <summary>
+        /// Reads the text from the requested file.
+        /// </summary>
+        /// <param name="fileName">
+        /// File name to read.
+        /// </param>
+        /// <returns>
+        /// The text read from the file.
+        /// </returns>
         public async Task<string> ReadFileAsync(string fileName)
         {
             IStorageFile file = await _rootFolder.TryGetItemAsync(fileName) as IStorageFile;

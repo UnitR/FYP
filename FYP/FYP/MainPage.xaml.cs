@@ -20,27 +20,51 @@ namespace FYP
     /// </summary>
     public sealed partial class MainPage : Page
     {
+        /// <summary>
+        /// Controls all file-specific operations along with encryption and decryption.
+        /// </summary>
         private readonly StorageHandler _storageHandler;
 
+        /// <summary>
+        /// Represents the currently selected user action, i.e. Encryption or Decryption of a file.
+        /// </summary>
         private StorageHandler.FileAction _currAction;
+
+        /// <summary>
+        /// Holds a reference to the currently selected file for encryption and decryption.
+        /// </summary>
         private IStorageFile _currActiveFile;
+
+        /// <summary>
+        /// Holds the mapping corresponding to the currently selected file to Decrypt and its
+        /// secure name representation on disk.
+        /// </summary>
         private FileNameMapping _currFileMapping;
 
+        /// <summary>
+        /// Source for the list of protected files.
+        /// </summary>
         private ObservableCollection<FileNameMapping> _fileMappings = new ObservableCollection<FileNameMapping>();
 
+        /// <summary>
+        /// Accessible property for the list of protected files.
+        /// </summary>
         internal ObservableCollection<FileNameMapping> FileMappings => this._fileMappings;
 
         public MainPage()
         {
             this.InitializeComponent();
-            this.Unloaded += (sender, args) =>
-            {
-                _storageHandler.Dispose();
-            };
 
+            // Initialise storage handler
             _storageHandler = new StorageHandler();
-            _storageHandler.Initialise();
 
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+            // Initialise the storage handler.
+            // TODO: This is a race condition and poorly designed. Needs reworking.
+            _storageHandler.Initialise();
+#pragma warning restore CS4014
+
+            // Hide anything which is not in Step 1. Progressive enabling.
             FileSelectGrid.Visibility = Visibility.Collapsed;
             ConfirmGrid.Visibility = Visibility.Collapsed;
         }
@@ -49,10 +73,12 @@ namespace FYP
         {
             _currAction = StorageHandler.FileAction.Encrypt;
 
+            // Set visibility of relevant items
             BtnFilePick.Visibility = Visibility.Visible;
             ProtectedFileList.Visibility = Visibility.Collapsed;
             FileSelectGrid.Visibility = Visibility.Visible;
 
+            // Ensure the next step is in view
             MainScroller.ScrollToElement(
                 element: FileSelectGrid,
                 isVerticalScrolling: false);
@@ -62,6 +88,8 @@ namespace FYP
         {
             _currAction = StorageHandler.FileAction.Decrypt;
 
+            // Initialise the list of protected files before displaying the
+            // related ListView
             if (FileMappings.Count == 0)
             {
                 foreach (FileNameMapping mapping in _storageHandler.FileList.FileMappings)
@@ -70,10 +98,12 @@ namespace FYP
                 }
             }
 
+            // Set visibility of relevant items
             BtnFilePick.Visibility = Visibility.Collapsed;
             ProtectedFileList.Visibility = Visibility.Visible;
             FileSelectGrid.Visibility = Visibility.Visible;
 
+            // Ensure the next step is in view
             MainScroller.ScrollToElement(
                 element: FileSelectGrid,
                 isVerticalScrolling: false);
@@ -108,24 +138,30 @@ namespace FYP
 
         private async void BtnConfirm_OnClick(object sender, RoutedEventArgs e)
         {
+            // Used for the success message; ensures to show the user a relevant message.
             string operation;
+
             switch (_currAction)
             {
                 case StorageHandler.FileAction.Encrypt:
                 {
-                    // Update the master file after each encryption
+                    // Update the master for each encryption
+                    // TODO: If encryption fails, this would need to either remove the element or even better, only add the element after the encryption succeeds.
                     string secureFileName = await _storageHandler.UpdateMasterListFileAsync(_currActiveFile.Name);
                     FileMappings.Add(
                         new FileNameMapping(
                             _currActiveFile.Name,
                             secureFileName));
+                    // Encrypt file
                     await EncryptFileAsync(secureFileName);
                     operation = "is now protected";
                     break;
                 }
                 case StorageHandler.FileAction.Decrypt:
                     {
+                        // Decrypt file
                         IStorageFile file = await DecryptFileAsync();
+                        // Open file with default system viewer
                         await Windows.System.Launcher.LaunchFileAsync(file);
                         operation = "should open shortly";
                         break;
@@ -134,13 +170,13 @@ namespace FYP
                     throw new ArgumentOutOfRangeException();
             }
 
+            // Display success message
             ContentDialog dialog = new ContentDialog
             {
                 Title = "All done!",
                 Content = $"Your file {operation}.",
                 CloseButtonText = "OK"
             };
-
             dialog.ShowAsync();
 
             // Clean up
@@ -152,8 +188,18 @@ namespace FYP
             FileSelectGrid.Visibility = Visibility.Collapsed;
         }
 
-        private async Task<bool> EncryptFileAsync(string fileName)
+        /// <summary>
+        /// Encrypts the currently active file.
+        /// </summary>
+        /// <param name="resultFileName">
+        /// The name of the file to write the encrypted file object to.
+        /// </param>
+        /// <returns>
+        /// True if the operation succeeds, false otherwise.
+        /// </returns>
+        private async Task<bool> EncryptFileAsync(string resultFileName)
         {
+            // Get the file bytes to encrypt.
             var fileStream = await _currActiveFile.OpenStreamForReadAsync();
             var fileBytes = new byte[(int)fileStream.Length];
             await fileStream.ReadAsync(fileBytes, 0, (int)fileStream.Length);
@@ -163,18 +209,27 @@ namespace FYP
                 // Encrypt stream
                 FileEncryptionData fed = _storageHandler.EncryptFile(fileBytes);
                 // Save to disk
-                await _storageHandler.SaveObjectToJsonAsync(fileName, fed);
+                await _storageHandler.SaveObjectToJsonAsync(resultFileName, fed);
             }
             catch (Exception ex)
             {
+                // Indicate that the operation failed.
                 return false;
             }
 
+            // Success
             return true;
         }
 
+        /// <summary>
+        /// Decrypts the currently chosen file.
+        /// </summary>
+        /// <returns>
+        /// A handle to the decrypted file (usually TEMP.*)
+        /// </returns>
         private async Task<IStorageFile> DecryptFileAsync()
         {
+            // Retrieve the protected file and convert it to a useful object
             string fedJson = await _storageHandler.ReadFileAsync(_currFileMapping.SecureName);
             if (String.IsNullOrWhiteSpace(fedJson))
             {
@@ -182,7 +237,6 @@ namespace FYP
                     nameof(_currFileMapping.SecureName),
                     "Cannot open non-existent file.");
             }
-
             FileEncryptionData fed = JsonConvert.DeserializeObject<FileEncryptionData>(fedJson);
 
             // Get the decrypted file
